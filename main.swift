@@ -107,7 +107,6 @@ final class BarsView: NSView {
     var gpu: Double? = nil
     var ram: Double = 0
     var net: Double = 0
-    var showPopup = false
 
     static let barW: CGFloat = 5
     static let gap: CGFloat = 6
@@ -120,19 +119,10 @@ final class BarsView: NSView {
         let x0: CGFloat = 4
         let line = NSColor.labelColor
         let fill = NSColor.labelColor
-        let popup = NSColor.secondaryLabelColor
 
         for (i, (letter, value)) in labels.enumerated() {
             let x = x0 + CGFloat(i) * (BarsView.barW + BarsView.gap)
             let v = min(1.0, max(0.0, value ?? 0))
-
-            if showPopup {
-                let p = NSBezierPath(roundedRect: NSRect(x: x - 1, y: 1, width: Self.barW + 2, height: Self.h - 2),
-                                     xRadius: 2, yRadius: 2)
-                p.lineWidth = 1
-                popup.setStroke()
-                p.stroke()
-            }
 
             // outline
             let o = NSBezierPath(rect: NSRect(x: x, y: 2, width: Self.barW, height: Self.h - 4))
@@ -161,13 +151,95 @@ final class BarsView: NSView {
     }
 }
 
+// MARK: - Popover
+
+final class StatusViewController: NSViewController {
+    override func loadView() {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let padding: CGFloat = 16
+
+        let title = NSTextField(labelWithString: "Systemstatus")
+        title.font = NSFont.systemFont(ofSize: 15, weight: .semibold)
+        title.textColor = NSColor.labelColor
+
+        let subtitle = NSTextField(labelWithString: "Vorschau – noch keine Live-Werte")
+        subtitle.font = NSFont.systemFont(ofSize: 12)
+        subtitle.textColor = NSColor.secondaryLabelColor
+
+        let rows: NSStackView = NSStackView()
+        rows.orientation = .vertical
+        rows.alignment = .leading
+        rows.spacing = 8
+        rows.distribution = .fill
+
+        func makeRow(_ label: String) -> NSView {
+            let l = NSTextField(labelWithString: label)
+            l.font = NSFont.systemFont(ofSize: 13)
+            l.textColor = NSColor.labelColor
+
+            let v = NSTextField(labelWithString: "—")
+            v.font = NSFont.systemFont(ofSize: 13)
+            v.textColor = NSColor.labelColor
+            v.alignment = .right
+
+            let row = NSView()
+            row.translatesAutoresizingMaskIntoConstraints = false
+            row.addSubview(l)
+            row.addSubview(v)
+            l.translatesAutoresizingMaskIntoConstraints = false
+            v.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                l.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+                v.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+                l.topAnchor.constraint(equalTo: row.topAnchor),
+                l.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+                v.topAnchor.constraint(equalTo: row.topAnchor),
+                v.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+            ])
+            return row
+        }
+
+        for name in ["CPU", "GPU", "RAM", "Netzwerk"] {
+            rows.addArrangedSubview(makeRow(name))
+        }
+
+        let quitButton = NSButton(title: "Beenden", target: nil, action: nil)
+        quitButton.bezelStyle = .rounded
+        quitButton.controlSize = .regular
+
+        let topStack = NSStackView(views: [title, subtitle])
+        topStack.orientation = .vertical
+        topStack.alignment = .leading
+        topStack.spacing = 4
+
+        let mainStack = NSStackView(views: [topStack, rows, quitButton])
+        mainStack.orientation = .vertical
+        mainStack.alignment = .leading
+        mainStack.spacing = 14
+        mainStack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(mainStack)
+        NSLayoutConstraint.activate([
+            mainStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: padding),
+            mainStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -padding),
+            mainStack.topAnchor.constraint(equalTo: container.topAnchor, constant: padding),
+            mainStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -padding),
+            container.widthAnchor.constraint(equalToConstant: 280),
+            quitButton.widthAnchor.constraint(equalTo: mainStack.widthAnchor),
+        ])
+
+        self.view = container
+    }
+}
+
 // MARK: - App
 
-final class App: NSObject, NSApplicationDelegate {
+final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let status = NSStatusBar.system.statusItem(withLength: 64)
     let view = BarsView(frame: NSRect(x: 0, y: 0, width: 64, height: 24))
     let metrics = Metrics()
-    let menu = NSMenu()
+    let popover = NSPopover()
 
     func applicationDidFinishLaunching(_ n: Notification) {
         let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -187,19 +259,40 @@ final class App: NSObject, NSApplicationDelegate {
         item.imagePosition = .imageOnly
         item.image = imageForView()
         updateTooltip()
-        menu.autoenablesItems = false
-        let quit = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
-        quit.target = self
-        menu.addItem(quit)
-        item.menu = menu
-        item.sendAction(on: [.leftMouseUp])
+
+        let vc = StatusViewController()
+        if let found = findButton(in: vc.view) {
+            found.target = self
+            found.action = #selector(quit)
+        }
+        popover.contentViewController = vc
+        popover.behavior = .transient
+        popover.delegate = self
+
         item.target = self
-        item.action = #selector(toggle)
+        item.action = #selector(togglePopover)
     }
 
-    @objc func toggle() {
-        view.showPopup.toggle()
-        status.button?.image = imageForView()
+    private func findButton(in view: NSView) -> NSButton? {
+        for sub in view.subviews {
+            if let btn = sub as? NSButton { return btn }
+            if let found = findButton(in: sub) { return found }
+        }
+        return nil
+    }
+
+    @objc func togglePopover() {
+        guard let button = status.button else { return }
+        if popover.isShown {
+            popover.performClose(button)
+        } else {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            popover.contentViewController?.view.window?.makeKey()
+        }
+    }
+
+    func popoverWillClose(_ notification: Notification) {
+        // nothing needed for now
     }
 
     private func updateTooltip() {
@@ -217,7 +310,6 @@ final class App: NSObject, NSApplicationDelegate {
     func imageForView() -> NSImage {
         let v = BarsView(frame: NSRect(x: 0, y: 0, width: 64, height: 24))
         v.cpu = view.cpu; v.gpu = view.gpu; v.ram = view.ram; v.net = view.net
-        v.showPopup = view.showPopup
         let img = NSImage(size: v.frame.size)
         img.lockFocus()
         v.draw(v.bounds)
