@@ -5,3 +5,5 @@
 *.o
 *.x
 .DS_Store
+/hsb-mb-next
+/Systemstatus.app/

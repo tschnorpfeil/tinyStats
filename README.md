@@ -1,22 +1,48 @@
-# HSB-MenuBar
+# Systemstatus
 
-Natives macOS-Menüleisten-Tool, das Systemwerte (CPU, GPU, RAM, Netzwerk)
-als Balken in der Menüleiste anzeigt. Implementiert in AppKit/Swift,
-ohne externe Abhängigkeiten.
+Kleines natives macOS-Menüleisten-Tool für CPU, GPU, RAM und Netzwerk.
+Ein monochromes Systemsymbol öffnet eine kompakte AppKit-Ansicht. Ohne
+externe Abhängigkeiten, Konten oder Datenuploads.
 
-## Build
+## Bauen und starten
 
-```sh
-swiftc main.swift -o hsb-mb
-```
-
-## Start
+Mit den installierten Xcode Command Line Tools:
 
 ```sh
-./hsb-mb
+./build.sh
+open Systemstatus.app
 ```
 
-## Hinweis
+Die App hat kein Dock-Symbol. Klick auf das Tacho-Symbol öffnet die Werte;
+Außenklick oder Escape schließt die Ansicht. „Beenden“ oder ⌘Q im Popover
+beendet die App. Vor dem Wechsel von einer alten Version diese beenden,
+damit nur eine Instanz läuft. Autostart wird nicht eingerichtet.
 
-Bevor eine neue Instanz gestartet wird, muss eine bereits laufende
-Instanz beendet werden. Keine zwei Instanzen gleichzeitig starten.
+Alternativ als einzelnes Binary: `swiftc -O main.swift -o hsb-mb`, dann `./hsb-mb`.
+
+## Messwerte
+
+- CPU: Anteil aktiver CPU-Ticks zwischen zwei Messungen.
+- GPU: „Device Utilization %“ aus IOAccelerator. Auf dem vorhandenen Apple
+  M5 beobachtet; auf anderer Hardware möglicherweise nicht verfügbar.
+- RAM ≈: aktive + verdrahtete + komprimierte Seiten relativ zum physischen
+  Speicher. Näherung, kein Speicherdruck und kein zugesicherter Gleichlauf
+  mit der Aktivitätsanzeige. Erklärung auch als Tooltip an der RAM-Zeile.
+- Netzwerk: getrennte Empfangs-/Senderaten aller `en`-Interfaces in dezimalen
+  B/s, KB/s, MB/s oder GB/s. VPN-/Tunnel-Interfaces werden nicht separat
+  mitgezählt. Kein Maß für die Kapazität der Internetverbindung.
+
+Aktualisierung jede Sekunde. „—“ bedeutet fehlende Daten oder eine neue
+Baseline (Start bzw. Interface-/Zählerwechsel); 0 ist eine gültige Messung.
+
+## Prüfen
+
+```sh
+swiftc -typecheck main.swift
+./Tests/run.sh
+git diff --check
+```
+
+Die Checks verwenden echte lokale CPU-/RAM-/Netzwerkproben, prüfen den
+Netzwerk-Baseline-Regressionsfall, Formatierung und Popover-Konstruktion.
+Sie setzen mindestens ein `en`-Interface auf diesem Mac voraus.

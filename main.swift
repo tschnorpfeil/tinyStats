@@ -15,7 +15,7 @@ final class Metrics {
     private var prevNets: [String: (in: UInt64, out: UInt64)]?
     private var prevNetTime: TimeInterval?
 
-    func cpu() -> Double {
+    func cpu() -> Double? {
         var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
         var info = host_cpu_load_info_data_t()
         let kr = withUnsafeMutablePointer(to: &info) {
@@ -23,18 +23,18 @@ final class Metrics {
                 host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &count)
             }
         }
-        guard kr == KERN_SUCCESS else { return 0 }
+        guard kr == KERN_SUCCESS else { return nil }
         defer {
             let u = info.cpu_ticks.0, s = info.cpu_ticks.1, i = info.cpu_ticks.2, n = info.cpu_ticks.3
             prevCPU = (u, s, i, n)
         }
-        guard let p = prevCPU else { return 0 }
+        guard let p = prevCPU else { return nil }
         let du = Double(info.cpu_ticks.0 &- p.user)
         let ds = Double(info.cpu_ticks.1 &- p.sys)
         let di = Double(info.cpu_ticks.2 &- p.idle)
         let dn = Double(info.cpu_ticks.3 &- p.nice)
         let total = du + ds + di + dn
-        return total > 0 ? (du + ds + dn) / total : 0
+        return total > 0 ? (du + ds + dn) / total : nil
     }
 
     func gpu() -> Double? {
@@ -62,7 +62,7 @@ final class Metrics {
         return found ? min(1.0, busy) : nil
     }
 
-    func ram() -> Double {
+    func ram() -> Double? {
         var stats = vm_statistics64_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
         let kr = withUnsafeMutablePointer(to: &stats) {
@@ -70,14 +70,14 @@ final class Metrics {
                 host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
             }
         }
-        guard kr == KERN_SUCCESS else { return 0 }
+        guard kr == KERN_SUCCESS else { return nil }
         let pageSize = UInt64(vm_kernel_page_size)
         let active = UInt64(stats.active_count) * pageSize
         let wired = UInt64(stats.wire_count) * pageSize
         let compressed = UInt64(stats.compressor_page_count) * pageSize
         let used = active + wired + compressed
         let total = ProcessInfo.processInfo.physicalMemory
-        return total > 0 ? min(1.0, Double(used) / Double(total)) : 0
+        return total > 0 ? min(1.0, Double(used) / Double(total)) : nil
     }
 
     func network() -> NetworkRates? {
@@ -111,7 +111,6 @@ final class Metrics {
             prevNetTime = now
             return nil
         }
-        // Interface set changed or any counter decreased -> new baseline, no artificial spikes.
         if Set(prev.keys) != Set(current.keys) {
             prevNets = current
             prevNetTime = now
@@ -140,245 +139,170 @@ final class Metrics {
             dIn += Double(c.in - p.in)
             dOut += Double(c.out - p.out)
         }
+        prevNets = current
+        prevNetTime = now
         return NetworkRates(downloadBytesPerSecond: dIn / dt, uploadBytesPerSecond: dOut / dt)
-    }
-}
-
-// MARK: - Bar View
-
-final class BarsView: NSView {
-    var cpu: Double = 0
-    var gpu: Double? = nil
-    var ram: Double = 0
-    var net: Double = 0
-
-    static let barW: CGFloat = 5
-    static let gap: CGFloat = 6
-    static let h: CGFloat = 18
-
-    override var isFlipped: Bool { true }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let labels: [(String, Double?)] = [("C", cpu), ("G", gpu), ("R", ram), ("N", net)]
-        let x0: CGFloat = 4
-        let line = NSColor.labelColor
-        let fill = NSColor.labelColor
-
-        for (i, (letter, value)) in labels.enumerated() {
-            let x = x0 + CGFloat(i) * (BarsView.barW + BarsView.gap)
-            let v = min(1.0, max(0.0, value ?? 0))
-
-            // outline
-            let o = NSBezierPath(rect: NSRect(x: x, y: 2, width: Self.barW, height: Self.h - 4))
-            o.lineWidth = 1
-            line.setStroke()
-            o.stroke()
-
-            // fill, bottom to top
-            let fillH = (Self.h - 4) * v
-            if fillH > 0.5 {
-                let f = NSBezierPath(rect: NSRect(x: x, y: 2 + (Self.h - 4) - fillH, width: Self.barW, height: fillH))
-                fill.setFill()
-                f.fill()
-            }
-
-            // label, centered
-            let font = NSFont(name: "Menlo", size: 5) ?? NSFont.monospacedSystemFont(ofSize: 5, weight: .regular)
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: (value ?? 0) > 0.5 ? NSColor.textBackgroundColor : NSColor.labelColor
-            ]
-            let s = NSAttributedString(string: letter, attributes: attrs)
-            let sz = s.size()
-            s.draw(at: NSPoint(x: x + (Self.barW - sz.width) / 2, y: (Self.h - sz.height) / 2))
-        }
     }
 }
 
 // MARK: - Popover
 
 final class StatusViewController: NSViewController {
-    private var cpuValue: NSTextField!
-    private var gpuValue: NSTextField!
-    private var ramValue: NSTextField!
-    private var downValue: NSTextField!
-    private var upValue: NSTextField!
+    private let cpuValue = NSTextField(labelWithString: "—")
+    private let gpuValue = NSTextField(labelWithString: "—")
+    private let ramValue = NSTextField(labelWithString: "—")
+    private let downValue = NSTextField(labelWithString: "—")
+    private let upValue = NSTextField(labelWithString: "—")
+    var onQuit: (() -> Void)?
 
     override func loadView() {
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-
-        let padding: CGFloat = 16
-
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 280))
         let title = NSTextField(labelWithString: "Systemstatus")
-        title.font = NSFont.systemFont(ofSize: 15, weight: .semibold)
-        title.textColor = NSColor.labelColor
+        title.font = .systemFont(ofSize: 14, weight: .semibold)
 
-        let subtitle = NSTextField(labelWithString: "RAM: geschätzte Belegung")
-        subtitle.font = NSFont.systemFont(ofSize: 12)
-        subtitle.textColor = NSColor.secondaryLabelColor
-
-        let rows: NSStackView = NSStackView()
-        rows.orientation = .vertical
-        rows.alignment = .leading
-        rows.spacing = 8
-        rows.distribution = .fill
-
-        func makeRow(_ label: String) -> (NSView, NSTextField) {
-            let l = NSTextField(labelWithString: label)
-            l.font = NSFont.systemFont(ofSize: 13)
-            l.textColor = NSColor.labelColor
-
-            let v = NSTextField(labelWithString: "—")
-            v.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
-            v.textColor = NSColor.labelColor
-            v.alignment = .right
-
-            let row = NSView()
-            row.translatesAutoresizingMaskIntoConstraints = false
-            row.addSubview(l)
-            row.addSubview(v)
-            l.translatesAutoresizingMaskIntoConstraints = false
-            v.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                l.leadingAnchor.constraint(equalTo: row.leadingAnchor),
-                v.trailingAnchor.constraint(equalTo: row.trailingAnchor),
-                l.topAnchor.constraint(equalTo: row.topAnchor),
-                l.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-                v.topAnchor.constraint(equalTo: row.topAnchor),
-                v.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-            ])
-            return (row, v)
+        func separator() -> NSView {
+            let line = NSBox()
+            line.boxType = .separator
+            return line
         }
 
-        let cpuRow = makeRow("CPU")
-        let gpuRow = makeRow("GPU")
-        let ramRow = makeRow("RAM")
-        let downRow = makeRow("Download ↓")
-        let upRow = makeRow("Upload ↑")
-        cpuValue = cpuRow.1
-        gpuValue = gpuRow.1
-        ramValue = ramRow.1
-        downValue = downRow.1
-        upValue = upRow.1
-        rows.addArrangedSubview(cpuRow.0)
-        rows.addArrangedSubview(gpuRow.0)
-        rows.addArrangedSubview(ramRow.0)
-        rows.addArrangedSubview(downRow.0)
-        rows.addArrangedSubview(upRow.0)
+        func row(_ name: String, symbol: String, value: NSTextField) -> NSView {
+            let icon = NSImageView()
+            icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            icon.contentTintColor = .secondaryLabelColor
+            icon.translatesAutoresizingMaskIntoConstraints = false
+            let label = NSTextField(labelWithString: name)
+            label.font = .systemFont(ofSize: 13)
+            value.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+            value.alignment = .right
+            value.setContentCompressionResistancePriority(.required, for: .horizontal)
+            value.setAccessibilityLabel(name)
+            let spacer = NSView()
+            let stack = NSStackView(views: [icon, label, spacer, value])
+            stack.orientation = .horizontal
+            stack.alignment = .centerY
+            stack.spacing = 9
+            NSLayoutConstraint.activate([
+                icon.widthAnchor.constraint(equalToConstant: 16),
+                icon.heightAnchor.constraint(equalToConstant: 16),
+                stack.heightAnchor.constraint(equalToConstant: 26),
+                spacer.widthAnchor.constraint(greaterThanOrEqualToConstant: 12)
+            ])
+            return stack
+        }
 
-        let quitButton = NSButton(title: "Beenden", target: nil, action: nil)
-        quitButton.bezelStyle = .rounded
-        quitButton.controlSize = .regular
-
-        let topStack = NSStackView(views: [title, subtitle])
-        topStack.orientation = .vertical
-        topStack.alignment = .leading
-        topStack.spacing = 4
-
-        let mainStack = NSStackView(views: [topStack, rows, quitButton])
-        mainStack.orientation = .vertical
-        mainStack.alignment = .leading
-        mainStack.spacing = 14
-        mainStack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(mainStack)
-        NSLayoutConstraint.activate([
-            mainStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: padding),
-            mainStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -padding),
-            mainStack.topAnchor.constraint(equalTo: container.topAnchor, constant: padding),
-            mainStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -padding),
-            container.widthAnchor.constraint(equalToConstant: 280),
-            quitButton.widthAnchor.constraint(equalTo: mainStack.widthAnchor),
+        let ramRow = row("RAM ≈", symbol: "memorychip", value: ramValue)
+        ramRow.toolTip = "Geschätzte Belegung: aktive, verdrahtete und komprimierte Speicherseiten. Kein Speicherdruck."
+        let rows = NSStackView(views: [
+            row("CPU", symbol: "cpu", value: cpuValue),
+            row("GPU", symbol: "square.3.layers.3d", value: gpuValue),
+            ramRow,
+            separator(),
+            row("Download", symbol: "arrow.down", value: downValue),
+            row("Upload", symbol: "arrow.up", value: upValue)
         ])
+        rows.orientation = .vertical
+        rows.alignment = .width
+        rows.spacing = 5
 
-        self.view = container
+        let note = NSTextField(labelWithString: "RAM ≈ Schätzung")
+        note.font = .systemFont(ofSize: 11)
+        note.textColor = .secondaryLabelColor
+        let quit = NSButton(title: "Beenden", target: self, action: #selector(quitClicked))
+        quit.bezelStyle = .rounded
+        quit.controlSize = .small
+        quit.font = .systemFont(ofSize: 11)
+        quit.keyEquivalent = "q"
+        quit.keyEquivalentModifierMask = .command
+        let footer = NSStackView(views: [note, NSView(), quit])
+        footer.orientation = .horizontal
+        footer.alignment = .centerY
+
+        let stack = NSStackView(views: [title, rows, separator(), footer])
+        stack.orientation = .vertical
+        stack.alignment = .width
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 16),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -14)
+        ])
+        view = container
+        preferredContentSize = NSSize(width: 300, height: stack.fittingSize.height + 30)
     }
 
-    func updateMetrics(cpu: Double, gpu: Double?, ram: Double, net: NetworkRates?) {
-        cpuValue.stringValue = "\(Int((cpu * 100).rounded())) %"
-        gpuValue.stringValue = gpu.map { "\(Int(($0 * 100).rounded())) %" } ?? "Nicht verfügbar"
-        ramValue.stringValue = "\(Int((ram * 100).rounded())) %"
+    @objc private func quitClicked() { onQuit?() }
+
+    func updateMetrics(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?) {
+        loadViewIfNeeded()
+        cpuValue.stringValue = Self.percent(cpu)
+        gpuValue.stringValue = Self.percent(gpu)
+        ramValue.stringValue = Self.percent(ram)
         downValue.stringValue = Self.formatRate(net?.downloadBytesPerSecond)
         upValue.stringValue = Self.formatRate(net?.uploadBytesPerSecond)
     }
 
-    private static func formatRate(_ bps: Double?) -> String {
-        guard let v = bps else { return "—" }
-        let fmt = NumberFormatter()
-        fmt.numberStyle = .decimal
-        let unit: (String, Double)
-        if v < 1_000 {
-            unit = ("B/s", v)
-        } else if v < 1_000_000 {
-            unit = ("KB/s", v / 1000.0)
-        } else if v < 1_000_000_000 {
-            unit = ("MB/s", v / 1_000_000.0)
-        } else {
-            unit = ("GB/s", v / 1_000_000_000.0)
+    static func percent(_ fraction: Double?) -> String {
+        guard let fraction, fraction.isFinite else { return "—" }
+        return "\(Int((min(1, max(0, fraction)) * 100).rounded())) %"
+    }
+
+    static func formatRate(_ bps: Double?) -> String {
+        guard let bps, bps.isFinite, bps >= 0 else { return "—" }
+        let units = ["B/s", "KB/s", "MB/s", "GB/s"]
+        var value = bps
+        var unit = 0
+        while value >= 1000, unit < units.count - 1 {
+            value /= 1000
+            unit += 1
         }
-        let s: String
-        if unit.0 == "B/s" {
-            let iv = Int(v.rounded())
-            s = fmt.string(from: NSNumber(value: iv)) ?? "\(iv)"
-        } else {
-            let scale: Double = unit.0 == "KB/s" ? 1000.0 : (unit.0 == "MB/s" ? 1_000_000.0 : 1_000_000_000.0)
-            let dv = Double(Int((v / scale * 10).rounded())) / 10.0
-            s = fmt.string(from: NSNumber(value: dv)) ?? String(format: "%.1f", dv)
-        }
-        return "\(s) \(unit.0)"
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = unit == 0 ? 0 : 1
+        formatter.maximumFractionDigits = unit == 0 ? 0 : 1
+        let number = formatter.string(from: NSNumber(value: value)) ?? "—"
+        return "\(number) \(units[unit])"
     }
 }
 
 // MARK: - App
 
-final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
-    let status = NSStatusBar.system.statusItem(withLength: 64)
-    let view = BarsView(frame: NSRect(x: 0, y: 0, width: 64, height: 24))
+final class App: NSObject, NSApplicationDelegate {
+    let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     let metrics = Metrics()
     let popover = NSPopover()
     let vc = StatusViewController()
-    private(set) var networkRates: NetworkRates?
+    private var timer: Timer?
 
-    func applicationDidFinishLaunching(_ n: Notification) {
-        let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            self.view.cpu = self.metrics.cpu()
-            self.view.gpu = self.metrics.gpu()
-            self.view.ram = self.metrics.ram()
-            let rates: NetworkRates? = self.metrics.network()
-            self.networkRates = rates
-            self.view.net = 0
-            self.view.needsDisplay = true
-            self.status.button?.image = self.imageForView()
-            self.updateTooltip()
-            self.vc.updateMetrics(cpu: self.view.cpu, gpu: self.view.gpu, ram: self.view.ram, net: rates)
-        }
-        RunLoop.main.add(t, forMode: .common)
-        let item = status.button!
-        item.title = ""
-        item.image = nil
-        item.imagePosition = .imageOnly
-        item.image = imageForView()
-        updateTooltip()
-
-        if let found = findButton(in: vc.view) {
-            found.target = self
-            found.action = #selector(quit)
-        }
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard let button = status.button else { return }
+        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+        let image = NSImage(systemSymbolName: "speedometer", accessibilityDescription: "Systemstatus")?
+            .withSymbolConfiguration(config)
+        image?.isTemplate = true
+        button.image = image
+        button.setAccessibilityLabel("Systemstatus")
+        button.target = self
+        button.action = #selector(togglePopover)
+        vc.onQuit = { NSApp.terminate(nil) }
         popover.contentViewController = vc
         popover.behavior = .transient
-        popover.delegate = self
-
-        item.target = self
-        item.action = #selector(togglePopover)
+        sample()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.sample() }
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
-    private func findButton(in view: NSView) -> NSButton? {
-        for sub in view.subviews {
-            if let btn = sub as? NSButton { return btn }
-            if let found = findButton(in: sub) { return found }
-        }
-        return nil
+    private func sample() {
+        let cpu = metrics.cpu()
+        let gpu = metrics.gpu()
+        let ram = metrics.ram()
+        let rates = metrics.network()
+        vc.updateMetrics(cpu: cpu, gpu: gpu, ram: ram, net: rates)
+        status.button?.toolTip = "CPU \(StatusViewController.percent(cpu)) · GPU \(StatusViewController.percent(gpu)) · RAM ≈ \(StatusViewController.percent(ram))"
     }
 
     @objc func togglePopover() {
@@ -386,37 +310,13 @@ final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if popover.isShown {
             popover.performClose(button)
         } else {
+            NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
     }
 
-    func popoverWillClose(_ notification: Notification) {
-        // nothing needed for now
-    }
-
-    private func updateTooltip() {
-        let tip: String
-        if let g = view.gpu {
-            tip = "GPU: \(Int((g * 100).rounded())) %"
-        } else {
-            tip = "GPU: Nicht verfügbar"
-        }
-        status.button?.toolTip = tip
-    }
-
-    @objc func quit() { NSApp.terminate(nil) }
-
-    func imageForView() -> NSImage {
-        let v = BarsView(frame: NSRect(x: 0, y: 0, width: 64, height: 24))
-        v.cpu = view.cpu; v.gpu = view.gpu; v.ram = view.ram; v.net = view.net
-        let img = NSImage(size: v.frame.size)
-        img.lockFocus()
-        v.draw(v.bounds)
-        img.unlockFocus()
-        img.isTemplate = false
-        return img
-    }
+    func applicationWillTerminate(_ notification: Notification) { timer?.invalidate() }
 }
 
 let app = NSApplication.shared
