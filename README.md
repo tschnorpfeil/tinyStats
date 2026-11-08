@@ -1,7 +1,9 @@
 # Systemstatus
 
 Kleines natives macOS-Menüleisten-Tool für CPU, GPU, RAM und Netzwerk.
-Ein monochromes Systemsymbol öffnet eine kompakte AppKit-Ansicht. Ohne
+Drei Füllbalken zeigen von links nach rechts CPU, GPU und RAM direkt in
+der Menüleiste. Daneben stehen Download (↓) und Upload (↑), kompakt in
+B/K/M/G pro Sekunde (dezimal, Bytes). Klick öffnet die Detailansicht. Ohne
 externe Abhängigkeiten, Konten oder Datenuploads.
 
 ## Bauen und starten
@@ -13,7 +15,7 @@ Mit den installierten Xcode Command Line Tools:
 open Systemstatus.app
 ```
 
-Die App hat kein Dock-Symbol. Klick auf das Tacho-Symbol öffnet die Werte;
+Die App hat kein Dock-Symbol. Klick auf die Indikatoren öffnet die Werte;
 Außenklick oder Escape schließt die Ansicht. „Beenden“ oder ⌘Q im Popover
 beendet die App. Vor dem Wechsel von einer alten Version diese beenden,
 damit nur eine Instanz läuft. Autostart wird nicht eingerichtet.
@@ -46,3 +48,8 @@ git diff --check
 Die Checks verwenden echte lokale CPU-/RAM-/Netzwerkproben, prüfen den
 Netzwerk-Baseline-Regressionsfall, Formatierung und Popover-Konstruktion.
 Sie setzen mindestens ein `en`-Interface auf diesem Mac voraus.
+
+Die Balken sind monochrom und füllen sich von unten nach oben. Ein Strich
+im Balken bedeutet fehlende Daten; eine leere Spur bedeutet gemessene 0 %.
+Die Breite bleibt bei wechselnden Werten konstant. Tooltip und VoiceOver
+enthalten die beschrifteten Werte und vollständigen Netzwerkeinheiten.

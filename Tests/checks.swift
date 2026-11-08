@@ -31,3 +31,24 @@ assert(controller.preferredContentSize.height > 200)
 controller.updateMetrics(cpu: 1, gpu: 1, ram: 1, net: NetworkRates(downloadBytesPerSecond: 999_999_999, uploadBytesPerSecond: 0))
 controller.view.layoutSubtreeIfNeeded()
 print("PASS: CPU/RAM live samples, network baseline regression, formatting, popover construction")
+assert(MenuBarIndicators.compactRate(nil) == "—")
+assert(MenuBarIndicators.compactRate(.nan) == "—")
+assert(MenuBarIndicators.compactRate(-1) == "—")
+assert(MenuBarIndicators.compactRate(0) == "0B")
+assert(MenuBarIndicators.compactRate(500) == "500B")
+assert(MenuBarIndicators.compactRate(1500).hasSuffix("K"))
+assert(MenuBarIndicators.compactRate(999_500).hasSuffix("M"))
+assert(MenuBarIndicators.compactRate(1_500_000).hasSuffix("M"))
+assert(MenuBarIndicators.compactRate(1_500_000_000).hasSuffix("G"))
+assert(MenuBarIndicators.compactRate(1_000_000_000_000) == "≥1T")
+for value: Double? in [nil, 0, 0.07, 0.81, 1, .nan] {
+    let image = MenuBarIndicators.image(cpu: value, gpu: value, ram: value, net: nil)
+    assert(image.isTemplate && image.size == NSSize(width: 108, height: 22))
+    assert(image.tiffRepresentation != nil, "Indicator must actually rasterize")
+}
+for rate in [0.0, 999, 999_499, 999_500, 999_499_999, 999_500_000, 999_499_999_999, 1e12] {
+    let text = MenuBarIndicators.compactRate(rate) as NSString
+    assert(text.size(withAttributes: [.font: MenuBarIndicators.rateFont]).width < 50,
+           "Network label must fit in its reserved width")
+}
+print("PASS: menu bar templates rasterize; compact units, promotion, missing values and text widths")

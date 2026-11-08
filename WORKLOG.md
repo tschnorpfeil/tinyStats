@@ -46,3 +46,38 @@ neue Build-/Test-/Arbeitsdateien zusätzlich, vor Round 1 separat erfasst.
 Review-Diff vor/nach der einen Runde unverändert: tracked Code/Dokumentation
 175 Einfügungen / 247 Löschungen; neue Dateien vor Review 106 Zeilen,
 dieses Protokoll danach um Abschlussdaten ergänzt.
+
+# Direkte Menüleistenindikatoren
+
+Basis: 9e48a65b316ab85b71d19354326dc7b12c1fbe88. Kein Remote.
+Intent: drei monochrome Füllbalken (CPU/GPU/RAM) plus zweizeilige
+Download-/Upload-Raten direkt in der Menüleiste, fest 120 pt breit.
+Messlogik und Popover unverändert. Keine Einstellungen oder Historien.
+Review-Diff für alle Runden:
+`git diff 9e48a65b316ab85b71d19354326dc7b12c1fbe88 -- main.swift Tests/checks.swift README.md WORKLOG.md`.
+
+- [x] Indikatoren und kompakte Byte-Raten implementieren
+- [x] Fehlende Werte von gemessener Null unterscheiden
+- [x] Tooltip und Accessibility um vollständige Netzwerkraten ergänzen
+- [x] Typprüfung, bestehende Checks, Rasterisierung und Textbreiten prüfen
+- [x] Native Grafik in Menüleistengröße offscreen rendern und ansehen
+- [x] Sol-Review (maximal 3 Runden) abschließen
+- [x] Finale Version bauen, starten und für lokalen Commit vorbereiten
+
+Grafik: 108 × 22 pt, 12 pt zusätzliche Button-Ränder. Drei 7 × 16 pt
+Balken; darunter keine unlesbaren Buchstaben. Leere Spur für Null,
+Strich für fehlende Messung. Netzwerk dezimal B/K/M/G pro Sekunde;
+ab 1 TB/s kompakt ≥1T. Keine Normierung auf Leitungskapazität.
+Live-Klicktest weiterhin nicht ausgeführt (Computer Use zuvor Timeout).
+
+## Sol Ledger Indikatoren
+
+Runde 1: APPROVE. Modell: codex / gpt-6.1-sol, Effort medium.
+Keine Findings, keine Review-Fixes, keine abgelehnten Findings.
+Usage nicht zurückgegeben. Kein Push. Reviewer führte Typprüfung und
+Diff-Check selbst aus. Nach Review nur Abschlussprotokoll ergänzt.
+Verhaltens-Diff unverändert: +98 / -9 Zeilen ohne Arbeitsprotokoll.
+Diff vor Review ohne Protokoll: 3 Dateien, +98 / -9 Zeilen.
+
+Finale Checks und Build bestanden. Genau eine App-Instanz (PID 92757)
+läuft, Startlog leer: /tmp/hsb-systemstatus-indicators.log. Live-Klicktest bleibt offen.

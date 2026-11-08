@@ -268,10 +268,73 @@ final class StatusViewController: NSViewController {
     }
 }
 
+// MARK: - Menu bar indicators
+
+// Fixed order: CPU, GPU, RAM; network rates are bytes per second.
+enum MenuBarIndicators {
+    static let size = NSSize(width: 108, height: 22)
+    static let rateFont = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium)
+
+    static func compactRate(_ bytes: Double?) -> String {
+        guard let bytes, bytes.isFinite, bytes >= 0 else { return "—" }
+        guard bytes < 1_000_000_000_000 else { return "≥1T" }
+        let units = ["B", "K", "M", "G"]
+        var value = bytes
+        var index = 0
+        // Promote values that would otherwise round to 1000 of the lower unit.
+        while value >= 999.5, index < units.count - 1 {
+            value /= 1000
+            index += 1
+        }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = false
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = index > 0 && value < 10 ? 1 : 0
+        return (formatter.string(from: NSNumber(value: value)) ?? "—") + units[index]
+    }
+
+    static func image(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?) -> NSImage {
+        let values = [cpu, gpu, ram]
+        let download = compactRate(net?.downloadBytesPerSecond)
+        let upload = compactRate(net?.uploadBytesPerSecond)
+        let image = NSImage(size: size, flipped: false) { _ in
+            for (index, value) in values.enumerated() {
+                let track = NSRect(x: 2 + CGFloat(index) * 11, y: 3, width: 7, height: 16)
+                NSColor.black.withAlphaComponent(0.22).setFill()
+                NSBezierPath(roundedRect: track, xRadius: 2, yRadius: 2).fill()
+                if let value, value.isFinite {
+                    let height = track.height * min(1, max(0, value))
+                    if height > 0 {
+                        NSColor.black.setFill()
+                        let fill = NSRect(x: track.minX, y: track.minY, width: track.width, height: height)
+                        NSBezierPath(roundedRect: fill, xRadius: min(2, height / 2), yRadius: min(2, height / 2)).fill()
+                    }
+                } else {
+                    // A dash distinguishes unavailable readings from a real zero.
+                    NSColor.black.withAlphaComponent(0.7).setFill()
+                    NSRect(x: track.minX + 1, y: 10.5, width: 5, height: 1).fill()
+                }
+            }
+            NSColor.black.withAlphaComponent(0.2).setFill()
+            NSRect(x: 37, y: 4, width: 0.5, height: 14).fill()
+            let attributes: [NSAttributedString.Key: Any] = [.font: rateFont, .foregroundColor: NSColor.black]
+            for (arrow, text, y) in [("↓", download, CGFloat(11)), ("↑", upload, CGFloat(0))] {
+                (arrow as NSString).draw(at: NSPoint(x: 44, y: y), withAttributes: attributes)
+                let width = (text as NSString).size(withAttributes: attributes).width
+                (text as NSString).draw(at: NSPoint(x: 104 - width, y: y), withAttributes: attributes)
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+}
+
 // MARK: - App
 
 final class App: NSObject, NSApplicationDelegate {
-    let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    let status = NSStatusBar.system.statusItem(withLength: MenuBarIndicators.size.width + 12)
     let metrics = Metrics()
     let popover = NSPopover()
     let vc = StatusViewController()
@@ -279,11 +342,6 @@ final class App: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let button = status.button else { return }
-        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
-        let image = NSImage(systemSymbolName: "speedometer", accessibilityDescription: "Systemstatus")?
-            .withSymbolConfiguration(config)
-        image?.isTemplate = true
-        button.image = image
         button.setAccessibilityLabel("Systemstatus")
         button.target = self
         button.action = #selector(togglePopover)
@@ -302,7 +360,10 @@ final class App: NSObject, NSApplicationDelegate {
         let ram = metrics.ram()
         let rates = metrics.network()
         vc.updateMetrics(cpu: cpu, gpu: gpu, ram: ram, net: rates)
-        status.button?.toolTip = "CPU \(StatusViewController.percent(cpu)) · GPU \(StatusViewController.percent(gpu)) · RAM ≈ \(StatusViewController.percent(ram))"
+        let description = "CPU \(StatusViewController.percent(cpu)) · GPU \(StatusViewController.percent(gpu)) · RAM ≈ \(StatusViewController.percent(ram)) · ↓ \(StatusViewController.formatRate(rates?.downloadBytesPerSecond)) · ↑ \(StatusViewController.formatRate(rates?.uploadBytesPerSecond))"
+        status.button?.image = MenuBarIndicators.image(cpu: cpu, gpu: gpu, ram: ram, net: rates)
+        status.button?.toolTip = description
+        status.button?.setAccessibilityValue(description)
     }
 
     @objc func togglePopover() {
