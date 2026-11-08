@@ -1,0 +1,7 @@
+# Binary
+/hsb-mb
+
+# Build-Ausgaben
+*.o
+*.x
+.DS_Store
