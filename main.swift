@@ -272,13 +272,14 @@ final class StatusViewController: NSViewController {
 
 // Fixed order: CPU, GPU, RAM; network rates are bytes per second.
 enum MenuBarIndicators {
-    static let size = NSSize(width: 108, height: 22)
+    static let size = NSSize(width: 88, height: 22)
+    static let labelFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
     static let rateFont = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium)
 
-    static func compactRate(_ bytes: Double?) -> String {
+    static func compactRate(_ bytes: Double?, locale: Locale = .current) -> String {
         guard let bytes, bytes.isFinite, bytes >= 0 else { return "—" }
         guard bytes < 1_000_000_000_000 else { return "≥1T" }
-        let units = ["B", "K", "M", "G"]
+        let units = ["B", "K", "M", "G", "T"]
         var value = bytes
         var index = 0
         // Promote values that would otherwise round to 1000 of the lower unit.
@@ -288,6 +289,7 @@ enum MenuBarIndicators {
         }
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
+        formatter.locale = locale
         formatter.usesGroupingSeparator = false
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = index > 0 && value < 10 ? 1 : 0
@@ -299,30 +301,34 @@ enum MenuBarIndicators {
         let download = compactRate(net?.downloadBytesPerSecond)
         let upload = compactRate(net?.uploadBytesPerSecond)
         let image = NSImage(size: size, flipped: false) { _ in
+            let labels = ["C", "G", "R"]
+            let labelAttributes: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: NSColor.black]
             for (index, value) in values.enumerated() {
-                let track = NSRect(x: 2 + CGFloat(index) * 11, y: 3, width: 7, height: 16)
-                NSColor.black.withAlphaComponent(0.22).setFill()
-                NSBezierPath(roundedRect: track, xRadius: 2, yRadius: 2).fill()
+                let columnX = CGFloat(index) * 17
+                let label = labels[index] as NSString
+                let labelWidth = label.size(withAttributes: labelAttributes).width
+                label.draw(at: NSPoint(x: columnX + (9 - labelWidth) / 2, y: 4), withAttributes: labelAttributes)
+                let track = NSRect(x: columnX + 10, y: 4, width: 5, height: 14)
                 if let value, value.isFinite {
+                    NSColor.black.withAlphaComponent(0.25).setFill()
+                    NSBezierPath(roundedRect: track, xRadius: 1.5, yRadius: 1.5).fill()
                     let height = track.height * min(1, max(0, value))
                     if height > 0 {
                         NSColor.black.setFill()
                         let fill = NSRect(x: track.minX, y: track.minY, width: track.width, height: height)
-                        NSBezierPath(roundedRect: fill, xRadius: min(2, height / 2), yRadius: min(2, height / 2)).fill()
+                        NSBezierPath(roundedRect: fill, xRadius: min(1.5, height / 2), yRadius: min(1.5, height / 2)).fill()
                     }
                 } else {
-                    // A dash distinguishes unavailable readings from a real zero.
+                    // Replace the track with a dash; unavailable is distinct from zero.
                     NSColor.black.withAlphaComponent(0.7).setFill()
-                    NSRect(x: track.minX + 1, y: 10.5, width: 5, height: 1).fill()
+                    NSRect(x: track.midX - 1.5, y: track.midY - 0.5, width: 3, height: 1).fill()
                 }
             }
-            NSColor.black.withAlphaComponent(0.2).setFill()
-            NSRect(x: 37, y: 4, width: 0.5, height: 14).fill()
             let attributes: [NSAttributedString.Key: Any] = [.font: rateFont, .foregroundColor: NSColor.black]
             for (arrow, text, y) in [("↓", download, CGFloat(11)), ("↑", upload, CGFloat(0))] {
-                (arrow as NSString).draw(at: NSPoint(x: 44, y: y), withAttributes: attributes)
+                (arrow as NSString).draw(at: NSPoint(x: 52, y: y), withAttributes: attributes)
                 let width = (text as NSString).size(withAttributes: attributes).width
-                (text as NSString).draw(at: NSPoint(x: 104 - width, y: y), withAttributes: attributes)
+                (text as NSString).draw(at: NSPoint(x: 88 - width, y: y), withAttributes: attributes)
             }
             return true
         }
@@ -334,7 +340,7 @@ enum MenuBarIndicators {
 // MARK: - App
 
 final class App: NSObject, NSApplicationDelegate {
-    let status = NSStatusBar.system.statusItem(withLength: MenuBarIndicators.size.width + 12)
+    let status = NSStatusBar.system.statusItem(withLength: MenuBarIndicators.size.width + 8)
     let metrics = Metrics()
     let popover = NSPopover()
     let vc = StatusViewController()
@@ -360,7 +366,8 @@ final class App: NSObject, NSApplicationDelegate {
         let ram = metrics.ram()
         let rates = metrics.network()
         vc.updateMetrics(cpu: cpu, gpu: gpu, ram: ram, net: rates)
-        let description = "CPU \(StatusViewController.percent(cpu)) · GPU \(StatusViewController.percent(gpu)) · RAM ≈ \(StatusViewController.percent(ram)) · ↓ \(StatusViewController.formatRate(rates?.downloadBytesPerSecond)) · ↑ \(StatusViewController.formatRate(rates?.uploadBytesPerSecond))"
+        let description = "CPU \(StatusViewController.percent(cpu)) · GPU \(StatusViewController.percent(gpu)) · RAM geschätzt \(StatusViewController.percent(ram)) · Download \(StatusViewController.formatRate(rates?.downloadBytesPerSecond)) · Upload \(StatusViewController.formatRate(rates?.uploadBytesPerSecond))"
+            .replacingOccurrences(of: "—", with: "Nicht verfügbar")
         status.button?.image = MenuBarIndicators.image(cpu: cpu, gpu: gpu, ram: ram, net: rates)
         status.button?.toolTip = description
         status.button?.setAccessibilityValue(description)

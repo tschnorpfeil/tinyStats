@@ -81,3 +81,55 @@ Diff vor Review ohne Protokoll: 3 Dateien, +98 / -9 Zeilen.
 
 Finale Checks und Build bestanden. Genau eine App-Instanz (PID 92757)
 läuft, Startlog leer: /tmp/hsb-systemstatus-indicators.log. Live-Klicktest bleibt offen.
+
+# Council Designrunde Menüleiste
+
+Auslöser: Screenshot des Nutzers zeigt verschwendeten Horizontalraum und
+nicht unterscheidbare CPU-/GPU-/RAM-Balken. Exploration eines Ersatzdesigns,
+daher vor der Designrunde keine Änderungen am zu ersetzenden Renderer.
+Basis db78c68. Arbeitsbaum vor Beginn sauber.
+
+- [x] Gewünschte Modelle auflösen: Opus 5.5, Gemini 4 Argon, GPT 6.1 Sol
+- [x] Drei unabhängige Designvorschläge lesen und zusammenführen
+- [x] Kompaktes, unterscheidbares Design umsetzen und prüfen
+- [x] Umsetzung dem Council erneut vorlegen
+- [x] Council-Ergebnis bewerten und Stand lokal sichern
+- [ ] Start durch neue Nutzeridee Notch-Integration abgelöst
+
+Council arbeitet lesend. Alle drei Modelle mit high reasoning. Keine PR/CI.
+
+## Council Runde 1 Ergebnisse und Umsetzung
+
+| Modell | Ist-Design Runde 1 | Umsetzung Runde 2 |
+| --- | --- | --- |
+| Opus 5.5 | 5/10 | 8/10 SATISFIED |
+| Gemini 4 Argon | 4/10 | 9/10 SATISFIED |
+| GPT 6.1 Sol | 4/10 | 9/10 SATISFIED |
+
+Gemeinsame Diagnose: gleiche Balken nicht zuordenbar; ~42 pt Loch bei 1K.
+Opus: C/G/R neben Balken, ca.100pt. Gemini: kleine Monogramme unter Balken,
+86pt. Sol: volle CPU/GPU/RAM über Querbalken,110pt. Der Nutzer hat danach
+C/G/R ausdrücklich als ausreichend bestätigt. Daher Opus-Richtung gewählt,
+aber Geometrie anhand echter Fontmessungen statt Schätzung: 88×22pt Bild,
+8pt Button-Ränder, insgesamt96pt. Drei17pt-Spalten,11pt Semibold-Kürzel,
+5×14pt-Füllbalken,36pt Netzwerkblock. ≥2pt Abstand zwischen Pfeil und
+breitester Rate. SF9-Netzwerkschrift: 999M misst tatsächlich26.06pt;
+die früheren Schätzungen von ca.22pt waren zu klein. Tests nun für de_DE
+ausgeführt sowie en_US, jede maximale Zeichenfolge und Fontbreite.
+Keine künstliche Mindestfüllung, keine zusätzliche Warnschwelle, keine
+Farbcodierung; proportionale Werte. Null: leere Spur. Unbekannt: Strich
+statt Spur. Vollständige Namen/Einheiten und „Nicht verfügbar“ im Tooltip
+und Accessibility-Wert. Format-Rundung bei999.5GB/s auf1T korrigiert,
+damit kein fünfstelliges1000G den Netzwerkblock sprengt.
+
+Native Offscreen-Renderings für Runde2:
+/tmp/hsb-council-light.png und /tmp/hsb-council-dark.png.
+Fünf Zustände: Screenshot-Werte, normal,0/niedrig/100%,unbekannt,Maximaltext.
+Renderings visuell geprüft, keine Kollisionen. Native Live-UI weiter offen.
+Checks: Typprüfung,Tests/run.sh,Build,Diff-Check erfolgreich. Keine PR/CI.
+
+Alle drei Reviewer SATISFIED; keine Blocker. Opus' Hinweis zum Abstand
+R→Netz als optischen Nit eingeordnet:17→16pt verschlechtert die Abstände
+zwischen den drei Gruppen. Unverändertes geprüftes Layout beibehalten.
+Nutzerwechsel auf Notch-Idee vor dem Neustart. Der96pt-Stand wird als
+Fallback-Basis committet; keine Änderungen gehen verloren.

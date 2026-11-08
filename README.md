@@ -1,7 +1,7 @@
 # Systemstatus
 
 Kleines natives macOS-Menüleisten-Tool für CPU, GPU, RAM und Netzwerk.
-Drei Füllbalken zeigen von links nach rechts CPU, GPU und RAM direkt in
+Drei beschriftete Füllbalken (C = CPU, G = GPU, R = RAM) zeigen Werte direkt in
 der Menüleiste. Daneben stehen Download (↓) und Upload (↑), kompakt in
 B/K/M/G pro Sekunde (dezimal, Bytes). Klick öffnet die Detailansicht. Ohne
 externe Abhängigkeiten, Konten oder Datenuploads.
@@ -49,7 +49,8 @@ Die Checks verwenden echte lokale CPU-/RAM-/Netzwerkproben, prüfen den
 Netzwerk-Baseline-Regressionsfall, Formatierung und Popover-Konstruktion.
 Sie setzen mindestens ein `en`-Interface auf diesem Mac voraus.
 
-Die Balken sind monochrom und füllen sich von unten nach oben. Ein Strich
-im Balken bedeutet fehlende Daten; eine leere Spur bedeutet gemessene 0 %.
-Die Breite bleibt bei wechselnden Werten konstant. Tooltip und VoiceOver
+Die Balken sind monochrom und füllen sich von unten nach oben. Die
+Kürzel C, G und R stehen lesbar neben dem jeweiligen Balken. Ein Strich
+in der Spur bedeutet fehlende Daten; eine leere Spur bedeutet gemessene 0 %.
+Die Gesamtbreite bleibt bei wechselnden Werten konstant bei 96 pt. Tooltip und VoiceOver
 enthalten die beschrifteten Werte und vollständigen Netzwerkeinheiten.

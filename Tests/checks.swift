@@ -43,12 +43,28 @@ assert(MenuBarIndicators.compactRate(1_500_000_000).hasSuffix("G"))
 assert(MenuBarIndicators.compactRate(1_000_000_000_000) == "≥1T")
 for value: Double? in [nil, 0, 0.07, 0.81, 1, .nan] {
     let image = MenuBarIndicators.image(cpu: value, gpu: value, ram: value, net: nil)
-    assert(image.isTemplate && image.size == NSSize(width: 108, height: 22))
+    assert(image.isTemplate && image.size == NSSize(width: 88, height: 22))
     assert(image.tiffRepresentation != nil, "Indicator must actually rasterize")
 }
-for rate in [0.0, 999, 999_499, 999_500, 999_499_999, 999_500_000, 999_499_999_999, 1e12] {
+for rate in [0.0, 999, 999_499, 999_500, 999_499_999, 999_500_000, 999_499_999_999, 999_500_000_000, 1e12] {
     let text = MenuBarIndicators.compactRate(rate) as NSString
-    assert(text.size(withAttributes: [.font: MenuBarIndicators.rateFont]).width < 50,
+    assert(text.size(withAttributes: [.font: MenuBarIndicators.rateFont]).width <= 27,
            "Network label must fit in its reserved width")
 }
 print("PASS: menu bar templates rasterize; compact units, promotion, missing values and text widths")
+
+assert(MenuBarIndicators.compactRate(999_500_000_000) == "1T")
+for label in ["C", "G", "R"] {
+    assert((label as NSString).size(withAttributes: [.font: MenuBarIndicators.labelFont]).width <= 9)
+}
+print("PASS: metric initials fit 9pt labels; worst-case rates fit tight 27pt field")
+
+for locale in [Locale(identifier: "de_DE"), Locale(identifier: "en_US")] {
+    for rate in [999.0, 1500, 999499, 999500, 9_940_000, 999_499_999, 999_499_999_999, 999_500_000_000, 1e12] {
+        let text = MenuBarIndicators.compactRate(rate, locale: locale) as NSString
+        let width = text.size(withAttributes: [.font: MenuBarIndicators.rateFont]).width
+        let arrowWidth = ("↓" as NSString).size(withAttributes: [.font: MenuBarIndicators.rateFont]).width
+        assert(width + arrowWidth + 2 <= 36, "Arrow and localized rate need at least 2pt separation")
+    }
+}
+print("PASS: de_DE/en_US network labels fit 36pt block with 2pt arrow gap")
