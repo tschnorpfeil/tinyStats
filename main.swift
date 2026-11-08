@@ -46,10 +46,9 @@ final class Metrics {
             var propsRef: Unmanaged<CFMutableDictionary>?
             guard IORegistryEntryCreateCFProperties(service, &propsRef, kCFAllocatorDefault, 0) == KERN_SUCCESS,
                   let props = propsRef?.takeRetainedValue() as? [String: Any],
-                  let util = props["PerformanceStatistics"] as? [String: Any],
-                  let stats = util["IOAcceleratorUtilization"] as? [String: Int],
-                  let g = stats["GPU"] else { continue }
-            busy += Double(g) / 100.0
+                  let stats = props["PerformanceStatistics"] as? [String: Any],
+                  let n = stats["Device Utilization %"] as? NSNumber else { continue }
+            busy += n.doubleValue / 100.0
             found = true
         }
         return found ? min(1.0, busy) : 0
