@@ -5,9 +5,15 @@ import CoreFoundation
 
 // MARK: - Metrics
 
+struct NetworkRates {
+    let downloadBytesPerSecond: Double
+    let uploadBytesPerSecond: Double
+}
+
 final class Metrics {
     private var prevCPU: (user: UInt32, sys: UInt32, idle: UInt32, nice: UInt32)?
-    private var prevNets: (in: UInt64, out: UInt64, t: TimeInterval)?
+    private var prevNets: [String: (in: UInt64, out: UInt64)]?
+    private var prevNetTime: TimeInterval?
 
     func cpu() -> Double {
         var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
@@ -74,11 +80,15 @@ final class Metrics {
         return total > 0 ? min(1.0, Double(used) / Double(total)) : 0
     }
 
-    func network() -> Double {
+    func network() -> NetworkRates? {
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddr) == 0 else { return 0 }
+        guard getifaddrs(&ifaddr) == 0 else {
+            prevNets = nil
+            prevNetTime = nil
+            return nil
+        }
         defer { freeifaddrs(ifaddr) }
-        var inTotal: UInt64 = 0, outTotal: UInt64 = 0
+        var current: [String: (in: UInt64, out: UInt64)] = [:]
         var ptr = ifaddr
         while let cur = ptr {
             defer { ptr = cur.pointee.ifa_next }
@@ -87,16 +97,50 @@ final class Metrics {
                   let addr = ifa.ifa_addr, addr.pointee.sa_family == UInt8(AF_LINK),
                   let name = String(validatingUTF8: namePtr), name.hasPrefix("en") else { continue }
             if let data = ifa.ifa_data?.assumingMemoryBound(to: if_data.self) {
-                inTotal &+= UInt64(data.pointee.ifi_ibytes)
-                outTotal &+= UInt64(data.pointee.ifi_obytes)
+                current[name] = (UInt64(data.pointee.ifi_ibytes), UInt64(data.pointee.ifi_obytes))
             }
         }
-        let now = Date().timeIntervalSince1970
-        defer { prevNets = (inTotal, outTotal, now) }
-        guard let p = prevNets, now > p.t else { return 0 }
-        let dt = now - p.t
-        let bytes = Double((inTotal &- p.in) + (outTotal &- p.out)) / dt
-        return min(1.0, bytes / 50_000_000) // saturate at 50 MB/s
+        let now = ProcessInfo.processInfo.systemUptime
+        guard !current.isEmpty else {
+            prevNets = nil
+            prevNetTime = nil
+            return nil
+        }
+        guard let prev = prevNets, let prevTime = prevNetTime, now > prevTime else {
+            prevNets = current
+            prevNetTime = now
+            return nil
+        }
+        // Interface set changed or any counter decreased -> new baseline, no artificial spikes.
+        if Set(prev.keys) != Set(current.keys) {
+            prevNets = current
+            prevNetTime = now
+            return nil
+        }
+        var counterDropped = false
+        for name in current.keys {
+            guard let p = prev[name], let c = current[name] else { continue }
+            if c.in < p.in || c.out < p.out { counterDropped = true; break }
+        }
+        if counterDropped {
+            prevNets = current
+            prevNetTime = now
+            return nil
+        }
+        let dt = now - prevTime
+        guard dt > 0 else {
+            prevNets = current
+            prevNetTime = now
+            return nil
+        }
+        var dIn = 0.0
+        var dOut = 0.0
+        for (name, c) in current {
+            let p = prev[name]!
+            dIn += Double(c.in - p.in)
+            dOut += Double(c.out - p.out)
+        }
+        return NetworkRates(downloadBytesPerSecond: dIn / dt, uploadBytesPerSecond: dOut / dt)
     }
 }
 
@@ -262,6 +306,7 @@ final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let metrics = Metrics()
     let popover = NSPopover()
     let vc = StatusViewController()
+    private(set) var networkRates: NetworkRates?
 
     func applicationDidFinishLaunching(_ n: Notification) {
         let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -269,7 +314,9 @@ final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             self.view.cpu = self.metrics.cpu()
             self.view.gpu = self.metrics.gpu()
             self.view.ram = self.metrics.ram()
-            self.view.net = self.metrics.network()
+            let rates: NetworkRates? = self.metrics.network()
+            self.networkRates = rates
+            self.view.net = 0
             self.view.needsDisplay = true
             self.status.button?.image = self.imageForView()
             self.updateTooltip()
