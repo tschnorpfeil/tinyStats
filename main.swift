@@ -154,6 +154,11 @@ final class BarsView: NSView {
 // MARK: - Popover
 
 final class StatusViewController: NSViewController {
+    private var cpuValue: NSTextField!
+    private var gpuValue: NSTextField!
+    private var ramValue: NSTextField!
+    private var netValue: NSTextField!
+
     override func loadView() {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
@@ -164,7 +169,7 @@ final class StatusViewController: NSViewController {
         title.font = NSFont.systemFont(ofSize: 15, weight: .semibold)
         title.textColor = NSColor.labelColor
 
-        let subtitle = NSTextField(labelWithString: "Vorschau – noch keine Live-Werte")
+        let subtitle = NSTextField(labelWithString: "RAM: geschätzte Belegung")
         subtitle.font = NSFont.systemFont(ofSize: 12)
         subtitle.textColor = NSColor.secondaryLabelColor
 
@@ -174,13 +179,13 @@ final class StatusViewController: NSViewController {
         rows.spacing = 8
         rows.distribution = .fill
 
-        func makeRow(_ label: String) -> NSView {
+        func makeRow(_ label: String) -> (NSView, NSTextField) {
             let l = NSTextField(labelWithString: label)
             l.font = NSFont.systemFont(ofSize: 13)
             l.textColor = NSColor.labelColor
 
             let v = NSTextField(labelWithString: "—")
-            v.font = NSFont.systemFont(ofSize: 13)
+            v.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
             v.textColor = NSColor.labelColor
             v.alignment = .right
 
@@ -198,12 +203,21 @@ final class StatusViewController: NSViewController {
                 v.topAnchor.constraint(equalTo: row.topAnchor),
                 v.bottomAnchor.constraint(equalTo: row.bottomAnchor),
             ])
-            return row
+            return (row, v)
         }
 
-        for name in ["CPU", "GPU", "RAM", "Netzwerk"] {
-            rows.addArrangedSubview(makeRow(name))
-        }
+        let cpuRow = makeRow("CPU")
+        let gpuRow = makeRow("GPU")
+        let ramRow = makeRow("RAM")
+        let netRow = makeRow("Netzwerk")
+        cpuValue = cpuRow.1
+        gpuValue = gpuRow.1
+        ramValue = ramRow.1
+        netValue = netRow.1
+        rows.addArrangedSubview(cpuRow.0)
+        rows.addArrangedSubview(gpuRow.0)
+        rows.addArrangedSubview(ramRow.0)
+        rows.addArrangedSubview(netRow.0)
 
         let quitButton = NSButton(title: "Beenden", target: nil, action: nil)
         quitButton.bezelStyle = .rounded
@@ -231,6 +245,13 @@ final class StatusViewController: NSViewController {
 
         self.view = container
     }
+
+    func updateMetrics(cpu: Double, gpu: Double?, ram: Double) {
+        cpuValue.stringValue = "\(Int((cpu * 100).rounded())) %"
+        gpuValue.stringValue = gpu.map { "\(Int(($0 * 100).rounded())) %" } ?? "Nicht verfügbar"
+        ramValue.stringValue = "\(Int((ram * 100).rounded())) %"
+        netValue.stringValue = "Noch nicht verbunden"
+    }
 }
 
 // MARK: - App
@@ -240,6 +261,7 @@ final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let view = BarsView(frame: NSRect(x: 0, y: 0, width: 64, height: 24))
     let metrics = Metrics()
     let popover = NSPopover()
+    let vc = StatusViewController()
 
     func applicationDidFinishLaunching(_ n: Notification) {
         let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -251,6 +273,7 @@ final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             self.view.needsDisplay = true
             self.status.button?.image = self.imageForView()
             self.updateTooltip()
+            self.vc.updateMetrics(cpu: self.view.cpu, gpu: self.view.gpu, ram: self.view.ram)
         }
         RunLoop.main.add(t, forMode: .common)
         let item = status.button!
@@ -260,7 +283,6 @@ final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         item.image = imageForView()
         updateTooltip()
 
-        let vc = StatusViewController()
         if let found = findButton(in: vc.view) {
             found.target = self
             found.action = #selector(quit)
