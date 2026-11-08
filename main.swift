@@ -31,11 +31,11 @@ final class Metrics {
         return total > 0 ? (du + ds + dn) / total : 0
     }
 
-    func gpu() -> Double {
+    func gpu() -> Double? {
         var iterator: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault,
                                            IOServiceMatching("IOAccelerator"),
-                                           &iterator) == KERN_SUCCESS else { return 0 }
+                                           &iterator) == KERN_SUCCESS else { return nil }
         defer { IOObjectRelease(iterator) }
         var busy = 0.0
         var found = false
@@ -48,10 +48,12 @@ final class Metrics {
                   let props = propsRef?.takeRetainedValue() as? [String: Any],
                   let stats = props["PerformanceStatistics"] as? [String: Any],
                   let n = stats["Device Utilization %"] as? NSNumber else { continue }
-            busy += n.doubleValue / 100.0
+            let raw = n.doubleValue
+            guard raw.isFinite, raw >= 0, raw <= 100 else { continue }
+            busy += raw / 100.0
             found = true
         }
-        return found ? min(1.0, busy) : 0
+        return found ? min(1.0, busy) : nil
     }
 
     func ram() -> Double {
@@ -102,7 +104,7 @@ final class Metrics {
 
 final class BarsView: NSView {
     var cpu: Double = 0
-    var gpu: Double = 0
+    var gpu: Double? = nil
     var ram: Double = 0
     var net: Double = 0
     var showPopup = false
@@ -114,7 +116,7 @@ final class BarsView: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        let labels = [("C", cpu), ("G", gpu), ("R", ram), ("N", net)]
+        let labels: [(String, Double?)] = [("C", cpu), ("G", gpu), ("R", ram), ("N", net)]
         let x0: CGFloat = 4
         let line = NSColor.labelColor
         let fill = NSColor.labelColor
@@ -122,7 +124,7 @@ final class BarsView: NSView {
 
         for (i, (letter, value)) in labels.enumerated() {
             let x = x0 + CGFloat(i) * (BarsView.barW + BarsView.gap)
-            let v = min(1.0, max(0.0, value))
+            let v = min(1.0, max(0.0, value ?? 0))
 
             if showPopup {
                 let p = NSBezierPath(roundedRect: NSRect(x: x - 1, y: 1, width: Self.barW + 2, height: Self.h - 2),
@@ -150,7 +152,7 @@ final class BarsView: NSView {
             let font = NSFont(name: "Menlo", size: 5) ?? NSFont.monospacedSystemFont(ofSize: 5, weight: .regular)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
-                .foregroundColor: v > 0.5 ? NSColor.textBackgroundColor : NSColor.labelColor
+                .foregroundColor: (value ?? 0) > 0.5 ? NSColor.textBackgroundColor : NSColor.labelColor
             ]
             let s = NSAttributedString(string: letter, attributes: attrs)
             let sz = s.size()
@@ -176,6 +178,7 @@ final class App: NSObject, NSApplicationDelegate {
             self.view.net = self.metrics.network()
             self.view.needsDisplay = true
             self.status.button?.image = self.imageForView()
+            self.updateTooltip()
         }
         RunLoop.main.add(t, forMode: .common)
         let item = status.button!
@@ -183,6 +186,7 @@ final class App: NSObject, NSApplicationDelegate {
         item.image = nil
         item.imagePosition = .imageOnly
         item.image = imageForView()
+        updateTooltip()
         menu.autoenablesItems = false
         let quit = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
@@ -196,6 +200,16 @@ final class App: NSObject, NSApplicationDelegate {
     @objc func toggle() {
         view.showPopup.toggle()
         status.button?.image = imageForView()
+    }
+
+    private func updateTooltip() {
+        let tip: String
+        if let g = view.gpu {
+            tip = "GPU: \(Int((g * 100).rounded())) %"
+        } else {
+            tip = "GPU: Nicht verfügbar"
+        }
+        status.button?.toolTip = tip
     }
 
     @objc func quit() { NSApp.terminate(nil) }
