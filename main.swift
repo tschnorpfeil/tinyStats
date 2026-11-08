@@ -201,7 +201,8 @@ final class StatusViewController: NSViewController {
     private var cpuValue: NSTextField!
     private var gpuValue: NSTextField!
     private var ramValue: NSTextField!
-    private var netValue: NSTextField!
+    private var downValue: NSTextField!
+    private var upValue: NSTextField!
 
     override func loadView() {
         let container = NSView()
@@ -253,15 +254,18 @@ final class StatusViewController: NSViewController {
         let cpuRow = makeRow("CPU")
         let gpuRow = makeRow("GPU")
         let ramRow = makeRow("RAM")
-        let netRow = makeRow("Netzwerk")
+        let downRow = makeRow("Download ↓")
+        let upRow = makeRow("Upload ↑")
         cpuValue = cpuRow.1
         gpuValue = gpuRow.1
         ramValue = ramRow.1
-        netValue = netRow.1
+        downValue = downRow.1
+        upValue = upRow.1
         rows.addArrangedSubview(cpuRow.0)
         rows.addArrangedSubview(gpuRow.0)
         rows.addArrangedSubview(ramRow.0)
-        rows.addArrangedSubview(netRow.0)
+        rows.addArrangedSubview(downRow.0)
+        rows.addArrangedSubview(upRow.0)
 
         let quitButton = NSButton(title: "Beenden", target: nil, action: nil)
         quitButton.bezelStyle = .rounded
@@ -290,11 +294,38 @@ final class StatusViewController: NSViewController {
         self.view = container
     }
 
-    func updateMetrics(cpu: Double, gpu: Double?, ram: Double) {
+    func updateMetrics(cpu: Double, gpu: Double?, ram: Double, net: NetworkRates?) {
         cpuValue.stringValue = "\(Int((cpu * 100).rounded())) %"
         gpuValue.stringValue = gpu.map { "\(Int(($0 * 100).rounded())) %" } ?? "Nicht verfügbar"
         ramValue.stringValue = "\(Int((ram * 100).rounded())) %"
-        netValue.stringValue = "Noch nicht verbunden"
+        downValue.stringValue = Self.formatRate(net?.downloadBytesPerSecond)
+        upValue.stringValue = Self.formatRate(net?.uploadBytesPerSecond)
+    }
+
+    private static func formatRate(_ bps: Double?) -> String {
+        guard let v = bps else { return "—" }
+        let fmt = NumberFormatter()
+        fmt.numberStyle = .decimal
+        let unit: (String, Double)
+        if v < 1_000 {
+            unit = ("B/s", v)
+        } else if v < 1_000_000 {
+            unit = ("KB/s", v / 1000.0)
+        } else if v < 1_000_000_000 {
+            unit = ("MB/s", v / 1_000_000.0)
+        } else {
+            unit = ("GB/s", v / 1_000_000_000.0)
+        }
+        let s: String
+        if unit.0 == "B/s" {
+            let iv = Int(v.rounded())
+            s = fmt.string(from: NSNumber(value: iv)) ?? "\(iv)"
+        } else {
+            let scale: Double = unit.0 == "KB/s" ? 1000.0 : (unit.0 == "MB/s" ? 1_000_000.0 : 1_000_000_000.0)
+            let dv = Double(Int((v / scale * 10).rounded())) / 10.0
+            s = fmt.string(from: NSNumber(value: dv)) ?? String(format: "%.1f", dv)
+        }
+        return "\(s) \(unit.0)"
     }
 }
 
@@ -320,7 +351,7 @@ final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             self.view.needsDisplay = true
             self.status.button?.image = self.imageForView()
             self.updateTooltip()
-            self.vc.updateMetrics(cpu: self.view.cpu, gpu: self.view.gpu, ram: self.view.ram)
+            self.vc.updateMetrics(cpu: self.view.cpu, gpu: self.view.gpu, ram: self.view.ram, net: rates)
         }
         RunLoop.main.add(t, forMode: .common)
         let item = status.button!
