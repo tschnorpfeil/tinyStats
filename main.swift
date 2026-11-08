@@ -42,7 +42,7 @@ final class Metrics {
         while true {
             let service = IOIteratorNext(iterator)
             guard service != 0 else { break }
-            IOObjectRelease(service)
+            defer { IOObjectRelease(service) }
             var propsRef: Unmanaged<CFMutableDictionary>?
             guard IORegistryEntryCreateCFProperties(service, &propsRef, kCFAllocatorDefault, 0) == KERN_SUCCESS,
                   let props = propsRef?.takeRetainedValue() as? [String: Any],
