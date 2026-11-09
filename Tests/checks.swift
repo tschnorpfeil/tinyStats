@@ -153,3 +153,31 @@ assert(toggled == true && controller.notchToggle.state == .on)
 controller.setNotchOption(available: false, enabled: true)
 assert(controller.notchToggle.isHidden && controller.preferredContentSize.height == compactHeight)
 print("PASS: notch checkbox hidden without notch, toggles and resizes popover")
+
+// Attached details stay flush with the source and inside the screen in either mode.
+let detailSize = NSSize(width: 300, height: 280)
+let notchAnchor = NSRect(x: 824.5, y: 924, width: 108, height: 32)
+let attachedFrame = AttachedDetails.frame(anchor: notchAnchor, contentSize: detailSize, screen: scoutScreen, besideNotch: true)
+assert(attachedFrame.minX == notchAnchor.minX && attachedFrame.maxY == notchAnchor.minY)
+assert(!attachedFrame.intersects(notchAnchor), "Details must never intercept clicks in the source indicator")
+let edgeAnchor = NSRect(x: 1420, y: 924, width: 40, height: 22)
+let edgeFrame = AttachedDetails.frame(anchor: edgeAnchor, contentSize: detailSize, screen: scoutScreen, besideNotch: false)
+assert(edgeFrame.maxX == scoutScreen.maxX - 8 && edgeFrame.maxY == edgeAnchor.minY)
+let shiftedDetail = AttachedDetails.frame(anchor: notchAnchor.offsetBy(dx: -1470, dy: 300), contentSize: detailSize, screen: shifted, besideNotch: true)
+assert(shiftedDetail == attachedFrame.offsetBy(dx: -1470, dy: 300))
+let details = AttachedDetails(controller: controller)
+assert(details.panel.canBecomeKey && details.panel.animationBehavior == .none)
+assert(details.panel.appearance?.name == .darkAqua)
+details.surface.frame = NSRect(origin: .zero, size: attachedFrame.size)
+details.surface.connection = NSRect(x: 0, y: 264, width: 108, height: 22)
+controller.view.frame = NSRect(origin: .zero, size: detailSize)
+controller.updateMetrics(cpu: 0.07, gpu: 0.99, ram: 0.81, net: NetworkRates(downloadBytesPerSecond: 1500, uploadBytesPerSecond: 0))
+controller.view.layoutSubtreeIfNeeded()
+let detailBitmap = details.surface.bitmapImageRepForCachingDisplay(in: details.surface.bounds)!
+details.surface.cacheDisplay(in: details.surface.bounds, to: detailBitmap)
+try! detailBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: "/tmp/hsb-attached-details.png"))
+let detailScale = CGFloat(detailBitmap.pixelsWide) / details.surface.bounds.width
+let neckPixel = detailBitmap.colorAt(x: Int(54 * detailScale), y: 1)!.usingColorSpace(.deviceRGB)!
+let shoulderPixel = detailBitmap.colorAt(x: Int(200 * detailScale), y: 1)!
+assert(isBlack(neckPixel) && shoulderPixel.alphaComponent < 0.01, "Broad flat attachment without a triangular arrow")
+print("PASS: attached detail geometry, screen-edge clamp, key panel and native black surface render")

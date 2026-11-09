@@ -19,7 +19,9 @@ Die App hat kein Dock-Symbol. Auf einem Hauptdisplay mit Notch schließt
 sie rechts an die Kameraaussparung an: schwarz, weiße Indikatoren, rechts
 gerundet. Ohne Notch erscheint die normale Menüleistenanzeige.
 Klick auf die Indikatoren öffnet die Werte;
-Außenklick oder Escape schließt die Ansicht. „Beenden“ oder ⌘Q im Popover
+Die Details öffnen als schwarzes, pfeilloses Panel mit breiter Verbindung
+zur Anzeige und einem kurzen Fade (140 ms; ohne Animation bei „Bewegung reduzieren“).
+Außenklick oder Escape schließt die Ansicht. „Beenden“ oder ⌘Q im Detailfenster
 beendet die App. Vor dem Wechsel von einer alten Version diese beenden,
 damit nur eine Instanz läuft. Autostart wird nicht eingerichtet.
 
@@ -49,7 +51,7 @@ git diff --check
 ```
 
 Die Checks verwenden echte lokale CPU-/RAM-/Netzwerkproben, prüfen den
-Netzwerk-Baseline-Regressionsfall, Formatierung und Popover-Konstruktion.
+Netzwerk-Baseline-Regressionsfall, Formatierung und Konstruktion der Detailansicht.
 Sie setzen mindestens ein `en`-Interface auf diesem Mac voraus.
 
 Die Balken sind monochrom und füllen sich von unten nach oben. Die

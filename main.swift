@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import IOKit
 import Darwin
 import CoreFoundation
@@ -161,7 +162,8 @@ final class StatusViewController: NSViewController {
     override func loadView() {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 280))
         let title = NSTextField(labelWithString: "Systemstatus")
-        title.font = .systemFont(ofSize: 14, weight: .semibold)
+        title.font = .systemFont(ofSize: 15, weight: .semibold)
+        title.alignment = .left
 
         func separator() -> NSView {
             let line = NSBox()
@@ -232,6 +234,7 @@ final class StatusViewController: NSViewController {
         stack.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(stack)
         NSLayoutConstraint.activate([
+            title.widthAnchor.constraint(equalTo: stack.widthAnchor),
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
             stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 16),
@@ -461,18 +464,138 @@ final class NotchOverlayPanel: NSPanel {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
+// MARK: - Attached details
+
+/// A broad, flat connection replaces the popover's triangular arrow.
+final class AttachedSurface: NSView {
+    var connection = NSRect.zero
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.black.setFill()
+        NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: bounds.width,
+                                        height: bounds.height - 6), xRadius: 16, yRadius: 16).fill()
+        NSBezierPath(rect: connection).fill()
+    }
+}
+
+final class DetailsPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+}
+
+final class AttachedDetails {
+    let panel: DetailsPanel
+    let surface = AttachedSurface()
+    private var localMonitor: Any?
+    private var globalMonitor: Any?
+    private var anchorRect = NSRect.zero
+    private(set) var isShown = false
+    private var transition = 0
+
+    init(controller: StatusViewController) {
+        panel = DetailsPanel(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: true)
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.level = .statusBar
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.animationBehavior = .none
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        panel.appearance = NSAppearance(named: .darkAqua)
+        panel.contentView = surface
+        controller.loadViewIfNeeded()
+        surface.addSubview(controller.view)
+    }
+
+    static func frame(anchor: NSRect, contentSize: NSSize, screen: NSRect, besideNotch: Bool) -> NSRect {
+        let width = contentSize.width
+        let x = besideNotch ? anchor.minX : anchor.midX - width / 2
+        return NSRect(x: min(max(x, screen.minX + 8), screen.maxX - width - 8),
+                      y: anchor.minY - contentSize.height - 6, width: width, height: contentSize.height + 6)
+    }
+
+    func show(anchor: NSView, controller: StatusViewController, besideNotch: Bool) {
+        guard let window = anchor.window, let screen = window.screen else { return }
+        anchorRect = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
+        let size = controller.preferredContentSize
+        let frame = Self.frame(anchor: anchorRect, contentSize: size, screen: screen.frame, besideNotch: besideNotch)
+        panel.setFrame(frame, display: false)
+        surface.frame = NSRect(origin: .zero, size: frame.size)
+        surface.connection = NSRect(x: anchorRect.minX - frame.minX, y: size.height - 16,
+                                    width: anchorRect.width, height: 22).intersection(surface.bounds)
+        surface.needsDisplay = true
+        controller.view.frame = NSRect(origin: .zero, size: size)
+        controller.view.layoutSubtreeIfNeeded()
+        transition += 1
+        isShown = true
+        NSApp.activate(ignoringOtherApps: true)
+        panel.alphaValue = 0
+        panel.makeKeyAndOrderFront(nil)
+        animate(to: 1)
+        installMonitors()
+    }
+
+    func close(animated: Bool = true) {
+        guard isShown else { return }
+        isShown = false
+        removeMonitors()
+        transition += 1
+        let current = transition
+        if !animated { panel.orderOut(nil); return }
+        animate(to: 0) { [weak self] in
+            guard let self, self.transition == current, !self.isShown else { return }
+            self.panel.orderOut(nil)
+        }
+    }
+
+    private func animate(to alpha: CGFloat, completion: (() -> Void)? = nil) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.14
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.allowsImplicitAnimation = true
+            panel.animator().alphaValue = alpha
+        } completionHandler: { completion?() }
+    }
+
+    private func installMonitors() {
+        removeMonitors()
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
+            guard let self else { return event }
+            if event.type == .keyDown {
+                if event.keyCode == 53 { self.close(); return nil }
+            } else if event.window !== self.panel && !self.anchorRect.contains(NSEvent.mouseLocation) {
+                self.close()
+            }
+            return event
+        }
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self, !self.anchorRect.contains(NSEvent.mouseLocation) else { return }
+            self.close()
+        }
+    }
+
+    private func removeMonitors() {
+        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+        if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
+        localMonitor = nil
+        globalMonitor = nil
+    }
+
+    deinit { removeMonitors() }
+}
+
 // MARK: - App
 
-final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class App: NSObject, NSApplicationDelegate {
     static let notchDefaultsKey = "showAtNotch"
     let status = NSStatusBar.system.statusItem(withLength: MenuBarIndicators.size.width + 8)
     let metrics = Metrics()
-    let popover = NSPopover()
     let vc = StatusViewController()
     private var timer: Timer?
     private lazy var panel = NotchOverlayPanel()
     private var overlayActive = false
-    private var lastPopoverClose: TimeInterval = 0
+    private lazy var details = AttachedDetails(controller: vc)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let button = status.button else { return }
@@ -485,19 +608,20 @@ final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             UserDefaults.standard.set(enabled, forKey: Self.notchDefaultsKey)
             self?.updatePlacement()
         }
-        popover.contentViewController = vc
-        popover.behavior = .transient
-        popover.delegate = self
         panel.overlayView.setAccessibilityLabel("Systemstatus")
         panel.overlayView.onClick = { [weak self] in self?.togglePopover() }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(applicationDeactivated),
+                                               name: NSApplication.didResignActiveNotification, object: nil)
         updatePlacement()
         sample()
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.sample() }
         self.timer = timer
         RunLoop.main.add(timer, forMode: .common)
     }
+
+    @objc private func applicationDeactivated(_ notification: Notification) { details.close() }
 
     @objc private func screensChanged(_ notification: Notification) { updatePlacement() }
 
@@ -510,9 +634,7 @@ final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let enabled = UserDefaults.standard.bool(forKey: Self.notchDefaultsKey)
         vc.setNotchOption(available: frame != nil, enabled: enabled)
         let target = enabled ? frame : nil
-        if (target != nil) != overlayActive, popover.isShown {
-            popover.performClose(nil)
-        }
+        details.close(animated: false)
         overlayActive = target != nil
         if let target {
             panel.setFrame(target, display: true)
@@ -541,21 +663,13 @@ final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         panel.overlayView.setAccessibilityValue(description)
     }
 
-    func popoverWillClose(_ notification: Notification) {
-        lastPopoverClose = ProcessInfo.processInfo.systemUptime
-    }
-
     @objc func togglePopover() {
         let anchor: NSView? = overlayActive ? panel.overlayView : status.button
         guard let anchor else { return }
-        if popover.isShown {
-            popover.performClose(anchor)
+        if details.isShown {
+            details.close()
         } else {
-            // A click on the overlay first closes the transient popover; don't reopen it.
-            if overlayActive, ProcessInfo.processInfo.systemUptime - lastPopoverClose < 0.3 { return }
-            NSApp.activate(ignoringOtherApps: true)
-            popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            details.show(anchor: anchor, controller: vc, besideNotch: overlayActive)
         }
     }
 

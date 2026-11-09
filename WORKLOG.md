@@ -186,3 +186,18 @@ LaufendeVersion nachReview weiterPID10896,Startlogleer. KeineQuelländerung
 nachBuild,keinNeustart nötig. Branch feat/notch-status. KeinRemote,keinPush,
 keinPR/CI,keineVeröffentlichung. Nutzer wird umBestätigung vonLive-Position
 undKlick gebeten,daComputerUse cgWindowNotFound meldet.
+
+
+## 2026-11-09 — Attached details and animation
+- [x] User confirmed notch display and click work on the preceding build.
+- [x] Replace NSPopover and blanket 300-ms click suppression with an arrowless black attached panel.
+- [x] Fixed window geometry, 140-ms opacity animation, Reduce Motion respected, transition token prevents stale close completions hiding a reopened panel.
+- [x] Outside click, Escape and app deactivation close; source click toggles without a delay.
+- [x] Left-aligned title and forced dark appearance; existing metrics and primary-display fallback retained.
+- [x] Local checks, render inspection, two-round review and restart.
+
+Review R1: CHANGES, S1 should: top 6pt overlap intercepted clicks in the source. Fixed by lowering panel exactly 6pt, so its top meets source bottom without overlap. Updated geometry assertions and regression assertion of disjoint frames. No other findings; usage not returned. R2 checks changed geometry and S1 only.
+
+R2: APPROVE; S1 resolved, no remaining findings. Reviewed with gpt-6.1-sol/high, 2 rounds; usage not returned. Diff R1 +171/-21, after focused fix +174/-21 (before final documentation). No declined findings. One local check run failed at existing CPU live-sample assertion after 50 ms; CPU may return nil when no tick delta exists or host query fails. Exact cause was not captured. Reviewer rerun and own subsequent complete rerun passed; UI code does not change sampling. Not claiming the existing timing-dependent test is deterministic. No measurement/test-scope expansion in this UI change.
+
+Installed build started as PID 18961; preceding exact executable PID 10896 terminated. /tmp/hsb-attached.log empty after startup. Live UI retry through cua.getApp(local.hsb.systemstatus) failed timeoutReached (-10005). Therefore actual interaction/animation remains unverified; offscreen render and review are not live proof. No push, PR, CI or remote (none configured).
