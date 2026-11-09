@@ -46,20 +46,19 @@ assert(Metrics.memoryUsed(vm, pageSize: 4096, total: 1000 * 4096) == 0.3 && Metr
 
 // MARK: Formatting
 
-assert(Format.percent(nil) == "—")
-assert(Format.percent(.nan) == "—")
-assert(Format.percent(0) == "0 %")
-assert(Format.percent(1) == "100 %")
-assert(Format.rate(nil) == "—")
-assert(Format.rate(.nan) == "—")
-assert(Format.rate(-1) == "—")
-assert(Format.rate(0) == "0 B/s")
-assert(Format.rate(1500).hasSuffix(" KB/s"))
-assert(Format.rate(1_500_000).hasSuffix(" MB/s"))
-assert(Format.rate(1_500_000_000).hasSuffix(" GB/s"))
+for missing: Double? in [nil, .nan, -1] {
+    assert([Format.rate(missing), Format.bytes(missing), Format.watts(missing), MenuBarIndicators.compactRate(missing)]
+        .allSatisfy { $0 == "—" }, "A missing reading is a dash, never 0")
+}
+assert(Format.percent(nil) == "—" && Format.percent(.nan) == "—" && Format.percent(0) == "0 %" && Format.percent(1) == "100 %")
+assert(Format.rate(0) == "0 B/s" && Format.bytes(0) == "0 B" && Format.watts(0).hasSuffix(" W"), "0 is a valid measurement")
 // Unit and precision follow the rounded value, so no boundary reads "1.000,0 KB/s" or "100,0 W".
-assert(Format.rate(999.6).hasSuffix(" KB/s") && Format.rate(999_950).hasSuffix(" MB/s") && Format.rate(999_949).hasSuffix(" KB/s"))
+for (value, unit) in [(1500.0, " KB/s"), (1_500_000, " MB/s"), (1_500_000_000, " GB/s"),
+                      (999.6, " KB/s"), (999_950, " MB/s"), (999_949, " KB/s")] {
+    assert(Format.rate(value).hasSuffix(unit), "\(value) reads in\(unit)")
+}
 assert(Format.watts(99.96) == "100 W" && Format.watts(100) == "100 W" && Format.bytes(99_960_000_000) == "100 GB")
+assert(Format.bytes(412_000_000_000) == "412 GB" && Format.bytes(24_000_000_000).hasSuffix(" GB") && Format.bytes(2e12).hasSuffix(" TB"))
 let de = Locale(identifier: "de_DE"), us = Locale(identifier: "en_US")
 assert(Format.scaled(999_950, units: ["B/s", "KB/s", "MB/s"], wholeBase: true, locale: de) == "1,0 MB/s")
 assert(Format.scaled(99.94, units: ["W"], wholeFrom: 100, locale: us) == "99.9 W")
@@ -84,17 +83,12 @@ func indicatorImage(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?
 
 // MARK: Menu bar indicators: three bars without letters, then upload over download
 
-assert(MenuBarIndicators.compactRate(nil) == "—")
-assert(MenuBarIndicators.compactRate(.nan) == "—")
-assert(MenuBarIndicators.compactRate(-1) == "—")
-assert(MenuBarIndicators.compactRate(0) == "0B")
-assert(MenuBarIndicators.compactRate(500) == "500B")
-assert(MenuBarIndicators.compactRate(1500).hasSuffix("K"))
-assert(MenuBarIndicators.compactRate(999_500).hasSuffix("M"))
-assert(MenuBarIndicators.compactRate(1_500_000).hasSuffix("M"))
-assert(MenuBarIndicators.compactRate(1_500_000_000).hasSuffix("G"))
-assert(MenuBarIndicators.compactRate(1_000_000_000_000) == "≥1T")
-assert(MenuBarIndicators.compactRate(999_500_000_000) == "1T")
+for (value, text) in [(0.0, "0B"), (500, "500B"), (999_500_000_000, "1T"), (1_000_000_000_000, "≥1T")] {
+    assert(MenuBarIndicators.compactRate(value) == text)
+}
+for (value, unit) in [(1500.0, "K"), (999_500, "M"), (1_500_000, "M"), (1_500_000_000, "G")] {
+    assert(MenuBarIndicators.compactRate(value).hasSuffix(unit))
+}
 let indicatorSize = MenuBarIndicators.size
 assert(indicatorSize.width == MenuBarIndicators.barsWidth + MenuBarIndicators.groupGap + MenuBarIndicators.rateColumn &&
        indicatorSize.width <= 60, "Without letters the image is bars, one gap and the rate column, nothing else")
@@ -104,25 +98,42 @@ for value: Double? in [nil, 0, 0.07, 0.81, 1, .nan] {
     assert(image.isTemplate && image.size == indicatorSize)
 }
 let rateColumn = MenuBarIndicators.rateColumn
-for locale in [Locale(identifier: "de_DE"), Locale(identifier: "en_US")] {
+func width(_ text: String, _ font: NSFont) -> CGFloat { (text as NSString).size(withAttributes: [.font: font]).width }
+for locale in [de, us] {
     for rate in [0.0, 999, 1500, 999_499, 999_500, 9_940_000, 999_499_999, 999_499_999_999, 999_500_000_000, 1e12] {
-        let text = MenuBarIndicators.compactRate(rate, locale: locale) as NSString
-        let width = text.size(withAttributes: [.font: MenuBarIndicators.rateFont]).width
-        let arrowWidth = MenuBarIndicators.arrowSize.width
-        assert(width + arrowWidth + 2 <= rateColumn, "Arrow and localized rate need at least 2pt separation")
+        assert(width(MenuBarIndicators.compactRate(rate, locale: locale), MenuBarIndicators.rateFont)
+               + MenuBarIndicators.arrowSize.width + 2 <= rateColumn, "Arrow and localized rate need at least 2pt separation")
     }
+    // The menu bar's single value must fit the column the network rates already used.
+    for value in [0.0, 9.94, 9.96, 99.9, 999.4] {
+        let text = MenuBarIndicators.compactNumber(value, locale: locale)! + "W"
+        assert(width(text, MenuBarIndicators.valueFont) <= rateColumn, "\(text) fits")
+    }
+}
+for text in ["100%", "≥1T", "999M", "—"] {
+    assert(width(text, MenuBarIndicators.valueFont) <= rateColumn, "\(text) fits the column")
 }
 let rows = MenuBarIndicators.rateRows(up: 1_500_000, down: 0)
 assert(rows.count == 2 && rows[0].up && rows[0].y > rows[1].y && !rows[1].up,
        "Upload row on top, download row below")
 assert(rows[0].text == MenuBarIndicators.compactRate(1_500_000) && rows[1].text == "0B", "Rows keep their own measured rate")
 
-/// Alpha of the template at 2x; `ink` averages it over a rect in image points.
-func alphaMap(_ image: NSImage) -> NSBitmapImageRep {
-    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(image.size.width * 2), pixelsHigh: Int(image.size.height * 2),
+/// Empty 2x bitmap of `size` points.
+func bitmap(_ size: NSSize) -> NSBitmapImageRep {
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
                                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-    rep.size = image.size
+    rep.size = size
+    return rep
+}
+func pixels(of view: NSView) -> NSBitmapImageRep {
+    let rep = bitmap(view.bounds.size)
+    view.cacheDisplay(in: view.bounds, to: rep)
+    return rep
+}
+/// Alpha of the template at 2x; `ink` averages it over a rect in image points.
+func alphaMap(_ image: NSImage) -> NSBitmapImageRep {
+    let rep = bitmap(image.size)
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     image.draw(in: NSRect(origin: .zero, size: image.size))
@@ -331,14 +342,6 @@ let openEdge = wing.wingMaxX - wing.frame.minX
 assert(spreadWing.contains(NSPoint(x: openEdge - 0.4, y: lowerEdge + 0.4)) && !spreadWing.contains(NSPoint(x: openEdge + 0.5, y: wingTop / 2)) &&
        spreadWing.contains(NSPoint(x: openEdge + 0.1 * flare, y: wingTop - 0.1 * flare)), "Attached wing keeps the flare and the straight edge")
 
-func pixels(of view: NSView, scale: CGFloat = 2) -> NSBitmapImageRep {
-    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * scale),
-                               pixelsHigh: Int(view.bounds.height * scale), bitsPerSample: 8, samplesPerPixel: 4,
-                               hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-    rep.size = view.bounds.size
-    view.cacheDisplay(in: view.bounds, to: rep)
-    return rep
-}
 func color(_ rep: NSBitmapImageRep, _ x: CGFloat, _ yFromTop: CGFloat) -> NSColor {
     let scale = CGFloat(rep.pixelsWide) / rep.size.width
     return rep.colorAt(x: Int(x * scale), y: Int(yFromTop * scale))!.usingColorSpace(.deviceRGB)!
@@ -452,22 +455,14 @@ print("PASS: island hangs from the housing, shares the fixed wing's right edge, 
 
 // MARK: Motion
 
-var lastWidth: CGFloat = -1
-for step in 0...100 {
-    let w = Choreography.widthProgress(CGFloat(step) / 100)
-    assert(w >= lastWidth)
-    lastWidth = w
-}
 assert(Choreography.widthProgress(0.8) == 1 && Choreography.contentAlpha(0.55) == 0 && Choreography.contentAlpha(0.95) == 1)
 assert(Choreography.attach(0) == 0 && Choreography.attach(0.3) == 1 && Choreography.contentDrop(1) == 0)
 assert(Choreography.backgroundAlpha(0) == 0 && Choreography.backgroundAlpha(1.02) == 1, "Background runs from transparent to black")
-var lastBackground: CGFloat = -1
-for step in 0...103 {
-    let p = CGFloat(step) / 100
-    let alpha = Choreography.backgroundAlpha(p)
-    assert(alpha >= lastBackground, "Background fade never flickers")
-    assert(Choreography.contentAlpha(p) == 0 || alpha == 1, "Content appears only over a fully black background")
-    lastBackground = alpha
+for step in 1...103 {
+    let p = CGFloat(step) / 100, before = CGFloat(step - 1) / 100
+    assert(Choreography.widthProgress(p) >= Choreography.widthProgress(before), "Width never shrinks while opening")
+    assert(Choreography.backgroundAlpha(p) >= Choreography.backgroundAlpha(before), "Background fade never flickers")
+    assert(Choreography.contentAlpha(p) == 0 || Choreography.backgroundAlpha(p) == 1, "Content appears only over a fully black background")
 }
 
 func simulate(_ phases: [(Double, Spring.Parameters, Double)]) -> [Double] {
@@ -730,8 +725,6 @@ assert(BatteryStatus.power(state: .charging, systemLoadMilliwatts: nil, batteryM
        "Charging with no reading is unknown, not 0 W")
 assert(DiskSpace(totalBytes: 100, freeBytes: 25).usedFraction == 0.75 && DiskSpace(totalBytes: 0, freeBytes: 0).usedFraction == nil)
 
-assert(Format.bytes(412_000_000_000) == "412 GB" && Format.bytes(nil) == "—" && Format.bytes(0) == "0 B" && Format.bytes(24_000_000_000).hasSuffix(" GB") && Format.bytes(2e12).hasSuffix(" TB"))
-assert(Format.watts(nil) == "—" && Format.watts(.nan) == "—" && Format.watts(0).hasSuffix(" W"))
 
 let plugged = Sample(battery: BatteryStatus(fraction: 1, state: .onAC, usageWatts: 35, chargeWatts: 0))
 assert(Metric.charging.cells(plugged)[0].value == Format.watts(0) && Metric.usage.cells(plugged)[0].value == Format.watts(35), "Both rows always read in watts")
@@ -828,17 +821,6 @@ for metric in Metric.allCases {
     }
 }
 
-// The menu bar's single value must fit the column the network rates already used.
-for locale in [Locale(identifier: "de_DE"), Locale(identifier: "en_US")] {
-    for value in [0.0, 9.94, 9.96, 99.9, 999.4] {
-        let text = (MenuBarIndicators.compactNumber(value, locale: locale)! + "W") as NSString
-        assert(text.size(withAttributes: [.font: MenuBarIndicators.valueFont]).width <= rateColumn, "\(text) fits")
-    }
-}
-for text in ["100%", "≥1T", "999M", "—"] {
-    let width = (text as NSString).size(withAttributes: [.font: MenuBarIndicators.valueFont]).width
-    assert(width <= rateColumn, "\(text) fits the column")
-}
 let single = alphaMap(MenuBarIndicators.image(bars: [1, 1, 1], readout: .value("84%", charging: false)))
 assert(single.size == indicatorSize, "Choosing a value never changes the indicator's width")
 assert(ink(single, NSRect(x: rateX, y: 0, width: indicatorSize.width - rateX, height: 22)).max > 0.5, "The value is drawn")
