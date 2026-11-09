@@ -7,9 +7,7 @@ class Tinystats < Formula
   depends_on macos: :sonoma
 
   def install
-    system "./build.sh"
-    (buildpath/"tinyStats.app/Contents/Resources").mkpath
-    (buildpath/"tinyStats.app/Contents/Resources/version.txt").write "tinyStats #{version}\n"
+    system "./build.sh", "tinyStats #{version}"
     prefix.install "tinyStats.app"
     libexec.install "bin/tinystats"
     # The CLI finds the app in this keg, and older kegs still running after an upgrade.

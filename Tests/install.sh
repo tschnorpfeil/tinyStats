@@ -12,7 +12,8 @@ cat > "$task_tmp/repository/build.sh" <<'BUILD'
 set -eu
 cd "$(dirname "$0")"
 [ ! -f fail-build ] || exit 19
-mkdir -p tinyStats.app/Contents/MacOS
+mkdir -p tinyStats.app/Contents/MacOS tinyStats.app/Contents/Resources
+printf '%s\n' "$1" > tinyStats.app/Contents/Resources/version.txt
 printf '#!/bin/sh\nexit 0\n' > tinyStats.app/Contents/MacOS/tinyStats
 chmod +x tinyStats.app/Contents/MacOS/tinyStats
 BUILD
@@ -30,10 +31,6 @@ cat > "$task_tmp/tools/ps" <<'MOCK'
 [ ! -f "$HOME/processes" ] || cat "$HOME/processes"
 MOCK
 cat > "$task_tmp/tools/swiftc" <<'MOCK'
-#!/bin/sh
-exit 0
-MOCK
-cat > "$task_tmp/tools/gh" <<'MOCK'
 #!/bin/sh
 exit 0
 MOCK
@@ -76,15 +73,23 @@ rm "$task_source/fail-build"
 mkdir "$HOME/.local/share/tinystats/install.lock"
 if "$task_cli" update; then echo 'Expected concurrent update rejection' >&2; exit 1; fi
 rmdir "$HOME/.local/share/tinystats/install.lock"
+# Installations from older versions carry the gh helper; an update removes it.
+git -C "$task_source" config --add credential.https://github.com.helper '!gh auth git-credential'
 "$task_cli" update
 [ "$("$task_cli" --version)" != "$task_initial_version" ]
 [ "$(cat "$task_source/revision")" = 'update fixture' ]
 [ -x "$task_exe" ]
-[ "$(git -C "$task_source" config --get-all credential.https://github.com.helper | wc -l | tr -d ' ')" = 2 ]
-[ "$(git -C "$task_source" config --get-all credential.https://github.com.helper | tail -1)" = '!gh auth git-credential' ]
+[ -z "$(git -C "$task_source" config --get-all credential.https://github.com.helper || true)" ]
 # User edits in managed source prevent update instead of being overwritten.
 printf 'local edit\n' >> "$task_source/build.sh"
 if "$task_cli" update; then echo 'Expected dirty checkout rejection' >&2; exit 1; fi
+# stop waits until the process is gone.
+sleep 30 &
+task_slow_pid=$!
+printf '%s %s\n' "$task_slow_pid" "$task_exe" > "$HOME/processes"
+"$task_cli" stop
+if kill -0 "$task_slow_pid" 2>/dev/null; then echo 'Expected stop to wait for exit' >&2; exit 1; fi
+: > "$HOME/processes"
 # Homebrew mode: update upgrades, stops the app of an older keg and starts the new keg.
 mkdir -p "$task_tmp/brew/bin"
 cat > "$task_tmp/tools/brew" <<'MOCK'
@@ -100,7 +105,7 @@ sleep 30 &
 task_old_pid=$!
 printf '%s %s\n' "$task_old_pid" "$task_tmp/cellar/tinystats/2.0/tinyStats.app/Contents/MacOS/tinyStats" > "$HOME/processes"
 TINYSTATS_KEGS="$task_tmp/cellar/tinystats" TINYSTATS_APP_DIR="$task_tmp/cellar/tinystats/2.1" "$task_cli" update
-[ "$(cat "$HOME/brew-calls")" = 'upgrade tinystats' ]
+[ "$(cat "$HOME/brew-calls")" = 'upgrade tschnorpfeil/tinystats/tinystats' ]
 if kill -0 "$task_old_pid" 2>/dev/null; then echo 'Expected old keg app to stop' >&2; exit 1; fi
 [ "$(cat "$HOME/new-keg-calls")" = 'start' ]
-printf 'PASS: install, launcher single-instance check, build failure preservation, update, dirty checkout protection, Homebrew update\n'
+printf 'PASS: install, launcher single-instance check, build failure preservation, stop, update, helper removal, dirty checkout protection, Homebrew update\n'

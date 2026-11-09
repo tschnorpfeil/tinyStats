@@ -5,6 +5,7 @@ task_bundle="tinyStats.app"
 mkdir -p "$task_bundle/Contents/MacOS"
 swiftc -O Sources/*.swift -o "$task_bundle/Contents/MacOS/tinyStats-next"
 mv "$task_bundle/Contents/MacOS/tinyStats-next" "$task_bundle/Contents/MacOS/tinyStats"
+# Usage: build.sh [VERSION_LINE] - the line is stored as Resources/version.txt.
 # The bundle identifier stays the same as before the rename, so the stored
 # notch preference carries over.
 cat > "$task_bundle/Contents/Info.plist" <<'PLIST'
@@ -23,4 +24,10 @@ cat > "$task_bundle/Contents/Info.plist" <<'PLIST'
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 </dict></plist>
 PLIST
+if [ -n "${1:-}" ]; then
+    mkdir -p "$task_bundle/Contents/Resources"
+    printf '%s\n' "$1" > "$task_bundle/Contents/Resources/version.txt"
+fi
+# Seal the bundle last; later changes would invalidate the signature.
+codesign --force --sign - "$task_bundle"
 printf 'Built %s/%s\n' "$PWD" "$task_bundle"
