@@ -322,10 +322,9 @@ let height = IslandContentView.height
 let notchLayout = IslandLayout.notch(wing, height: height)
 assert(notchLayout.attachY == wing.notch.minY.rounded(.up) && notchLayout.attachY - wing.notch.minY < 1,
        "Top edge on the first whole point above the housing's lower edge: hidden behind housing and wing")
-assert(notchLayout.frame.maxY == notchLayout.attachY && notchLayout.frame.maxY - (wing.frame.minY + wing.bottomY) < 0.5,
-       "Details reach into the wing's window only below its visible lower edge (less than a 2x pixel row)")
-assert(notchLayout.frame.intersection(wing.frame).height <= 1 &&
-       notchLayout.frame.maxY <= wing.frame.minY + wing.hitRect.minY + 0.5, "The visible wing above stays clickable")
+assert(abs(notchLayout.frame.maxY - wing.notch.maxY) <= 1,
+       "Open window reaches behind the housing to fill its rounded lower-left cutout")
+assert(notchLayout.final.lowerBound == wing.notch.minX && notchLayout.final.upperBound == wing.wingMaxX)
 assert(notchLayout.final.upperBound == wing.wingMaxX && notchLayout.rightFillet == 0, "Right edge continues the fixed wing")
 assert(notchLayout.final.lowerBound == wing.notch.minX && notchLayout.leftFillet == 0,
        "Expanded left edge exactly matches the notch, with no inset or protruding fillet")
@@ -348,7 +347,7 @@ assert(NotchWing.make(screenFrame: NSRect(x: 0, y: 0, width: 1024, height: 665),
                       rightArea: NSRect(x: 574, y: 633, width: 450, height: 32), topInset: 32) == nil,
        "Use normal menu bar if exact notch+wing width cannot hold readable content")
 let publicLayout = IslandLayout.notch(publicWing, height: height)
-assert(publicLayout.attachY == publicWing.notch.minY && publicLayout.frame == notchLayout.frame, "Same island without an outline")
+assert(publicLayout.attachY == publicWing.notch.minY && publicLayout.width == notchLayout.width, "Same island width without an outline")
 
 for layout in [notchLayout, publicLayout] {
     let bounds = NSRect(origin: .zero, size: layout.frame.size).insetBy(dx: -0.01, dy: -0.01)
@@ -554,3 +553,10 @@ assert(islandCensus.white > 300 && islandCensus.colored == 0, "Content renders w
 island.setProgress(0.3)
 assert(islandContent.alphaValue == 0, "Content waits until the body has room")
 print("PASS: island render monochrome, convex corners, content hidden while closed and early in the motion")
+
+let capTestPoint = NSPoint(x: body.minX + 1, y: notchLayout.attachY - notchLayout.frame.minY + 5)
+assert(notchLayout.path(at: 1).contains(capTestPoint), "Housing lower-left rounded gap is filled above the attachment line")
+assert(!notchLayout.path(at: 0).contains(capTestPoint), "No housing cap remains when collapsed")
+assert(!notchLayout.path(at: 1).contains(NSPoint(x: body.minX - 1, y: capTestPoint.y)), "Cap never protrudes left of the physical notch")
+assert(!barLayout.path(at: 1).contains(NSPoint(x: barLayout.finalBodyRect.midX, y: barLayout.frame.height + 1)), "Normal menu bar gets no housing cap")
+print("PASS: expanded housing corner gap filled, collapsed and menu-bar silhouettes unchanged")

@@ -445,13 +445,14 @@ struct IslandLayout: Equatable {
     var height: CGFloat
     var leftFillet: CGFloat
     var rightFillet: CGFloat
+    var housingCapHeight: CGFloat = 0
 
     /// Exact union of housing and compact wing: neither outer edge moves.
     /// Overlap the fractional lower edge to avoid a seam between windows.
     static func notch(_ wing: NotchWing, height: CGFloat) -> IslandLayout {
         IslandLayout(attachY: wing.notch.minY.rounded(.up), source: wing.notch.maxX...wing.wingMaxX,
                      final: wing.notch.minX...wing.wingMaxX, height: height,
-                     leftFillet: 0, rightFillet: 0)
+                     leftFillet: 0, rightFillet: 0, housingCapHeight: wing.notch.maxY - wing.notch.minY.rounded(.up))
     }
 
     /// From the menu bar's lower edge, centred under the status item.
@@ -470,11 +471,11 @@ struct IslandLayout: Equatable {
 
     var width: CGFloat { final.upperBound - final.lowerBound }
 
-    /// Window frame on whole points; its top never rises above the attach line.
+    /// Whole-point frame; notch mode also covers the housing cutout above the attach line.
     var frame: NSRect {
         let minX = (min(source.lowerBound, final.lowerBound) - leftFillet).rounded(.down)
         let maxX = (max(source.upperBound, final.upperBound) + rightFillet).rounded(.up)
-        let top = attachY.rounded(.down)
+        let top = (attachY + housingCapHeight).rounded(.up)
         let bottom = (attachY - height - Self.headroom).rounded(.down)
         return NSRect(x: minX, y: bottom, width: maxX - minX, height: top - bottom)
     }
@@ -533,6 +534,15 @@ struct IslandLayout: Equatable {
                            radius: s.leftFillet, startAngle: 0, endAngle: 90, clockwise: false)
         }
         path.close()
+        // Fill the housing's lower-left rounded cutout as the island reaches
+        // its left edge. The cap stays strictly inside the housing bounds;
+        // the wing's visible width and the content position do not change.
+        if housingCapHeight > 0 {
+            let capRight = min(source.lowerBound, s.maxX) - frame.minX
+            if capRight > left {
+                path.appendRect(NSRect(x: left, y: top, width: capRight - left, height: housingCapHeight))
+            }
+        }
         return path
     }
 }
