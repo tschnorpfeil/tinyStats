@@ -237,3 +237,8 @@ Delivered behavior commit 20cd416 to GitHub main, retaining the user-requested d
 - [x] Update language assertions and regenerate all README renderings with an English locale.
 - [x] Native tests, installer tests, rendering and build passed. Numeric formatting in the app still follows the system locale.
 Historical commit messages and stable bundle identifiers are preserved.
+
+## 2026-11-09 — Status item clicks that close and reopen the details
+Symptom (user video, external display, menu bar mode): clicking the indicator while the card was open started closing it, then it sprang back. The local monitor compared the click with the button's rect, but the measured status window is 82–84×33 pt and the button only 66–68×22 pt, inside a 30 pt bar. A click in the extra strip (the video's cursor sits at the top edge; `NSEvent.mouseLocation` reads y 1200 on a 1200 pt screen, which `NSRect.contains` also excludes) counted as outside and closed the card, then the button's action saw it closed and opened it again.
+Fix: `IslandPresenter.open` also takes the source window; a local click in that window is left to the toggle. Same path for the notch wing's top edge.
+Proof: probe running the real `App` and status item, four synthetic clicks 2 pt below the window top, with the cursor outside the button. Before: 4/4 close, toggle, reopen. After: close and open alternate through the toggle only. Regression in Tests/checks.swift. Not proven: a physical click on the fixed build, since the installed app was not replaced.
