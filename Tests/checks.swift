@@ -623,6 +623,30 @@ var cancelled = 0
 panel.onCancel = { cancelled += 1 }
 panel.cancelOperation(nil)
 assert(cancelled == 1, "Escape through the responder chain also closes")
+func key(_ code: UInt16, _ characters: String) -> NSEvent {
+    NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                     characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)!
+}
+assert(presenter.localHandler(key(53, "\u{1b}")) == nil, "The installed monitor swallows Escape instead of passing it on")
+let letter = key(0, "a")
+assert(presenter.localHandler(letter) === letter, "Other keys pass through")
+
+// Reopened mid-close from another source or display: the new geometry, not the old one.
+let farScreen = NSRect(x: -40_000, y: -40_000, width: 2560, height: 1440)
+func farLayout(_ dx: CGFloat) -> IslandLayout {
+    IslandLayout.menuBar(anchor: NSRect(x: farScreen.minX + 2000 + dx, y: farScreen.maxY - 27, width: 92, height: 24),
+                         screen: farScreen.offsetBy(dx: dx, dy: 0), visibleTop: farScreen.maxY - 30, height: height)
+}
+let reopening = IslandPresenter(content: IslandContentView(width: IslandLayout.menuBarWidth, hasBattery: true))
+reopening.reduceMotion = { true }
+reopening.open(layout: farLayout(0), source: .zero)
+reopening.close()
+assert(!reopening.isPresented && reopening.panel.isVisible, "Still fading out")
+reopening.open(layout: farLayout(2560), source: .zero)
+assert(reopening.view.layout == farLayout(2560) && reopening.panel.frame == farLayout(2560).frame,
+       "Reopening with a different layout configures it anew")
+reopening.close(animated: false)
+assert(!reopening.panel.isVisible)
 let now = Date()
 assert(!SingleInstance.shouldYield(ownLaunch: now, otherLaunches: []), "Alone: start")
 assert(SingleInstance.shouldYield(ownLaunch: now, otherLaunches: [now.addingTimeInterval(-60)]), "Older instance wins")

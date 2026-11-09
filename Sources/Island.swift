@@ -117,8 +117,9 @@ final class IslandPresenter: NSObject {
         isPresented = true
         sourceRect = source
         let still = reduceMotion()
-        if !panel.isVisible {
-            // A reversal keeps the geometry already in flight.
+        if !panel.isVisible || view.layout != layout {
+            // A reversal keeps the geometry already in flight; a different
+            // source or display grows anew from its own.
             view.configure(layout)
             panel.setFrame(layout.frame, display: false)
             spring.snap(to: 0)
@@ -228,6 +229,12 @@ final class IslandPresenter: NSObject {
         return inSource ? .pass : .close
     }
 
+    /// The local monitor's handler; returning nil swallows the event.
+    private(set) lazy var localHandler: (NSEvent) -> NSEvent? = { [weak self] event in
+        guard let self else { return event }
+        return self.handleLocal(event)
+    }
+
     func handleLocal(_ event: NSEvent) -> NSEvent? {
         let key = event.type == .keyDown
         let inPanel = event.window === panel
@@ -250,7 +257,7 @@ final class IslandPresenter: NSObject {
     private func installMonitors() {
         removeMonitors()
         if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown],
-                                                        handler: { [weak self] event in self?.handleLocal(event) ?? event }) {
+                                                        handler: localHandler) {
             monitors.append(local)
         }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown],
