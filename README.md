@@ -16,7 +16,14 @@ To customize, click the gear in the details. Each tile can show CPU, GPU, RAM, B
 
 ## Install
 
-Requires macOS 14+ and Xcode Command Line Tools (`xcode-select --install`).
+Requires macOS 14+. With [Homebrew](https://brew.sh):
+
+```sh
+brew tap tschnorpfeil/tinystats https://github.com/tschnorpfeil/tinyStats
+brew install tinystats
+```
+
+Homebrew builds the app on your Mac, so no signed download is needed. Without Homebrew, install Xcode Command Line Tools (`xcode-select --install`) and run:
 
 ```sh
 git clone https://github.com/tschnorpfeil/tinyStats.git && ./tinyStats/install.sh
@@ -27,7 +34,7 @@ Then open a new terminal:
 ```sh
 tinystats          # start
 tinystats stop     # quit
-tinystats update   # update
+tinystats update   # update and restart (also after brew upgrade)
 tinystats status   # check whether the app is running
 tinystats version  # installed version
 ```
@@ -44,3 +51,5 @@ open tinyStats.app
 ./Tests/run.sh
 ./Tests/install.sh
 ```
+
+To release, raise `CFBundleShortVersionString` in `build.sh` and the `tag:` in `Formula/tinystats.rb`, merge, then push the matching tag, e.g. `git tag v2.0 && git push origin v2.0`.

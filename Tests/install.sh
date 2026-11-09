@@ -85,4 +85,22 @@ rmdir "$HOME/.local/share/tinystats/install.lock"
 # User edits in managed source prevent update instead of being overwritten.
 printf 'local edit\n' >> "$task_source/build.sh"
 if "$task_cli" update; then echo 'Expected dirty checkout rejection' >&2; exit 1; fi
-printf 'PASS: install, launcher single-instance check, build failure preservation, update, dirty checkout protection\n'
+# Homebrew mode: update upgrades, stops the app of an older keg and starts the new keg.
+mkdir -p "$task_tmp/brew/bin"
+cat > "$task_tmp/tools/brew" <<'MOCK'
+#!/bin/sh
+case "$1" in
+    --prefix) printf '%s\n' "$HOME/../brew" ;;
+    *) printf '%s\n' "$*" >> "$HOME/brew-calls" ;;
+esac
+MOCK
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "$HOME/new-keg-calls"\n' > "$task_tmp/brew/bin/tinystats"
+chmod +x "$task_tmp/tools/brew" "$task_tmp/brew/bin/tinystats"
+sleep 30 &
+task_old_pid=$!
+printf '%s %s\n' "$task_old_pid" "$task_tmp/cellar/tinystats/2.0/tinyStats.app/Contents/MacOS/tinyStats" > "$HOME/processes"
+TINYSTATS_KEGS="$task_tmp/cellar/tinystats" TINYSTATS_APP_DIR="$task_tmp/cellar/tinystats/2.1" "$task_cli" update
+[ "$(cat "$HOME/brew-calls")" = 'upgrade tinystats' ]
+if kill -0 "$task_old_pid" 2>/dev/null; then echo 'Expected old keg app to stop' >&2; exit 1; fi
+[ "$(cat "$HOME/new-keg-calls")" = 'start' ]
+printf 'PASS: install, launcher single-instance check, build failure preservation, update, dirty checkout protection, Homebrew update\n'
