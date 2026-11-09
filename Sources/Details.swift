@@ -409,7 +409,7 @@ final class IslandContentView: NSView {
     @objc private func metricPicked(_ item: NSMenuItem) {
         guard let raw = item.representedObject as? String, let metric = Metric(rawValue: raw) else { return }
         var layout = metricLayout
-        if item.tag == Self.menuBarSlot { layout.setMenuBar(metric) } else { layout.setTop(metric, at: item.tag) }
+        if item.tag == Self.menuBarSlot { layout.menuBar = metric } else { layout.setTop(metric, at: item.tag) }
         change(layout)
     }
 

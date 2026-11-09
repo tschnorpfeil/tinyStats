@@ -769,7 +769,7 @@ let defaults = UserDefaults(suiteName: suite)!
 assert(MetricLayout.stored(in: defaults, hasBattery: true) == MetricLayout(), "First launch shows the original metrics")
 var saved = MetricLayout()
 saved.setTop(.disk, at: 0)
-saved.setMenuBar(.battery)
+saved.menuBar = .battery
 saved.save(to: defaults)
 assert(MetricLayout.stored(in: defaults, hasBattery: true) == saved, "A choice survives a restart")
 defaults.removePersistentDomain(forName: suite)

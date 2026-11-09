@@ -12,10 +12,8 @@ enum MetricCategory: String, CaseIterable {
 enum Metric: String, CaseIterable {
     case cpu, gpu, ram, battery, disk, network, usage, charging, diskActivity, swap
 
-    static let gauges: [Metric] = [.cpu, .gpu, .ram, .battery, .disk]
-
-    var isGauge: Bool { Self.gauges.contains(self) }
-    var needsBattery: Bool { self == .battery || self == .usage || self == .charging }
+    var isGauge: Bool { [.cpu, .gpu, .ram, .battery, .disk].contains(self) }
+    var needsBattery: Bool { category == .power }
 
     static func available(hasBattery: Bool) -> [Metric] { allCases.filter { hasBattery || !$0.needsBattery } }
     static func gauges(hasBattery: Bool) -> [Metric] { available(hasBattery: hasBattery).filter(\.isGauge) }
@@ -132,22 +130,20 @@ struct MetricLayout: Equatable {
     static let standardTop: [Metric] = [.cpu, .gpu, .ram]
 
     private(set) var top: [Metric] = standardTop
-    private(set) var menuBar: Metric = .network
+    var menuBar: Metric = .network
 
     init() {}
 
-    /// Anything stored that is unknown, repeated or unsupported on this Mac is dropped.
+    /// Anything stored that is unknown, repeated or unsupported on this Mac is
+    /// dropped; the first usable gauges fill the remaining positions.
     init(storedTop: [String]?, storedMenuBar: String?, hasBattery: Bool) {
         let usable = Metric.gauges(hasBattery: hasBattery)
-        var picked: [Metric] = []
-        for raw in storedTop ?? [] {
-            if let metric = Metric(rawValue: raw), usable.contains(metric), !picked.contains(metric), picked.count < 3 {
-                picked.append(metric)
-            }
+        top = []
+        for metric in (storedTop ?? []).compactMap(Metric.init(rawValue:)) + usable
+        where usable.contains(metric) && !top.contains(metric) && top.count < 3 {
+            top.append(metric)
         }
-        for metric in usable where picked.count < 3 && !picked.contains(metric) { picked.append(metric) }
-        top = picked
-        if let metric = storedMenuBar.flatMap(Metric.init(rawValue:)), hasBattery || !metric.needsBattery { menuBar = metric }
+        if let metric = storedMenuBar.flatMap(Metric.init(rawValue:)), !metric.needsBattery || hasBattery { menuBar = metric }
     }
 
     /// Picking a gauge already shown elsewhere swaps the two, so all three stay different.
@@ -156,8 +152,6 @@ struct MetricLayout: Equatable {
         if let other = top.firstIndex(of: metric) { top[other] = top[slot] }
         top[slot] = metric
     }
-
-    mutating func setMenuBar(_ metric: Metric) { menuBar = metric }
 
     /// Everything not on a tile, so each metric appears exactly once. Network has its own tray.
     func listed(hasBattery: Bool) -> [Metric] {
@@ -170,8 +164,8 @@ struct MetricLayout: Equatable {
     }
 
     static func stored(in defaults: UserDefaults, hasBattery: Bool) -> MetricLayout {
-        MetricLayout(storedTop: defaults.stringArray(forKey: topKey) ?? standardTop.map(\.rawValue),
-                     storedMenuBar: defaults.string(forKey: menuBarKey), hasBattery: hasBattery)
+        MetricLayout(storedTop: defaults.stringArray(forKey: topKey), storedMenuBar: defaults.string(forKey: menuBarKey),
+                     hasBattery: hasBattery)
     }
 }
 
