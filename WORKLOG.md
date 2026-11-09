@@ -275,7 +275,7 @@ Evidence:
 - [x] Installer/CLI: private source checkout, local build, staged app replacement, source main fast-forward update, dirty checkout refusal, installed-process-only stop/start, no duplicate launch.
 - [x] CLI docs and top-level README instructions.
 - [x] Combined Sol review (2 completed rounds; superseded review cancelled).
-- [ ] Commit installer; create private tinyStats GitHub repo and push main; install and verify actual terminal command/update.
+- [x] Commit installer; create private tinyStats GitHub repo and push main; install and verify actual terminal command/update.
 Known proof boundary: no live pixel capture available. Opus ran real panels and sampled window-server bounds through37animationticks; parent inspected native rendered views, not a screen recording. User previously confirmed live display/click and said general new direction is better; latest subtle lower-edge alignment remains visually unconfirmed. Undocumented read-only bezelPath uses guarded fallback; no dependency or runtime patch. No PR is required for the explicitly requested new repository + main delivery.
 
 ## Latest user geometry correction
@@ -284,3 +284,11 @@ The wing must never widen when opening. Expanded island now spans notch.minX...w
 Combined Sol R1: CHANGES, S1 should accepted. Repeated installer run with gh available failed because setting an already multi-valued credential helper without --replace-all returns Git exit5. Changed only that setter to --replace-all and added available mock-gh to installer fixtures plus exact two-helper assertion after update. No UI behavior change after review. R2 only S1 and changed installer/test code. Usage not returned.
 
 Final combined Sol R2 APPROVE: S1 closed, no remaining findings. gpt-6.1-sol/high, 2 completed rounds, usage not returned. Installer test with gh present passes and diffcheck passes. No declined findings. Final combined diff from03d0164 spans app redesign, fixed-wing correction, installer/CLI and documentation; late behavioral change only credentialhelper idempotency. Publish/install follows with user-authorized private repository and direct main push; no PR or CI invocation.
+
+## Delivered: GitHub main, installed CLI and runtime proof
+- Private repository https://github.com/tschnorpfeil/tinyStats created with default branch main. Source local main and remote main matchedf679541 before this documentation commit. No PR, no CI trigger, no force push.
+- Installed ~/Applications/tinyStats.app and ~/.local/bin/tinystats, maintained source ~/.local/share/tinystats/source. Development source instancePID76104 terminated; installed instancePID91138 after successful real `tinystats update` from privateGitHub.
+- Actual new zsh login: command-vtinystats resolves ~/.local/bin/tinystats; status/version pass. Repeated start keeps samePID; process inventory confirms exactly one installed instance. Real update fetchedmain, built, replacedapp and restarted successfully with gh present.
+- CUA now works for installedapp: clicked sourcebutton, observed actual liveexpandednativeUI with CPU/GPU/RAM and upload/download; direct open→Escape sequence removedcontentcontrols from AXtree. This is live UI proof, not offscreen proof. The screenshot is scoped to the panel and does not include the wholephysicalnotch; precise fullsilhouette alignment still needs user confirmation, requested through questiontool after all independent work completed.
+- Fixed-wing on-screen window bounds measured118×33pt at788/0. Native current checks assert fullanimationexactleft/rightboundaries andinvariantwingwidth, reducedmotion/routing/raster/contentfit. Parentinspectednew253ptcontentrender /tmp/tinystats-fixed-width-expanded.png.
+- Read-only undocumented AppKitbezelPath guarded fallback remains a known compatibility limit. Foreignmenuoverlap remains possible, recoverablewithNotchtoggle. No autostart, modeldownloads or telemetry introduced.
