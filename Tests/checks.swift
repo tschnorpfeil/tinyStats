@@ -401,8 +401,17 @@ for step in 0...100 {
     assert(w >= lastWidth)
     lastWidth = w
 }
-assert(Choreography.widthProgress(0.8) == 1 && Choreography.contentAlpha(0.45) == 0 && Choreography.contentAlpha(0.92) == 1)
-assert(Choreography.attach(0) == 0 && Choreography.attach(0.12) == 1 && Choreography.contentDrop(1) == 0)
+assert(Choreography.widthProgress(0.8) == 1 && Choreography.contentAlpha(0.55) == 0 && Choreography.contentAlpha(0.95) == 1)
+assert(Choreography.attach(0) == 0 && Choreography.attach(0.3) == 1 && Choreography.contentDrop(1) == 0)
+assert(Choreography.backgroundAlpha(0) == 0 && Choreography.backgroundAlpha(1.02) == 1, "Background runs from transparent to black")
+var lastBackground: CGFloat = -1
+for step in 0...103 {
+    let p = CGFloat(step) / 100
+    let alpha = Choreography.backgroundAlpha(p)
+    assert(alpha >= lastBackground, "Background fade never flickers")
+    assert(Choreography.contentAlpha(p) == 0 || alpha == 1, "Content appears only over a fully black background")
+    lastBackground = alpha
+}
 
 func simulate(_ phases: [(Double, Spring.Parameters, Double)]) -> [Double] {
     var spring = Spring()
@@ -560,6 +569,11 @@ let islandCensus = census(islandPixels)
 assert(islandCensus.white > 300 && islandCensus.colored == 0, "Content renders white on black, monochrome")
 island.setProgress(0.3)
 assert(islandContent.alphaValue == 0, "Content waits until the body has room")
+let fadingBody = notchLayout.bodyRect(at: 0.3)
+let fadingPixels = pixels(of: island)
+let fadingAlpha = color(fadingPixels, fadingBody.midX, fadingPixels.size.height - fadingBody.midY).alphaComponent
+assert(abs(fadingAlpha - Choreography.backgroundAlpha(0.3)) < 0.03 && fadingAlpha > 0.1 && fadingAlpha < 0.9,
+       "Silhouette renders translucent while it fades, got \(fadingAlpha)")
 print("PASS: island render monochrome, convex corners, content hidden while closed and early in the motion")
 
 let capTestPoint = NSPoint(x: body.minX + 1, y: notchLayout.attachY - notchLayout.frame.minY + 5)

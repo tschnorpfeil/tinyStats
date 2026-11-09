@@ -563,11 +563,15 @@ enum Choreography {
         let t = min(max(p / 0.8, 0), 1)
         return 1 - (1 - t) * (1 - t)
     }
-    static func contentAlpha(_ p: CGFloat) -> CGFloat { smoothstep(0.45, 0.92, p) }
+    /// The silhouette fades from transparent to black as it opens and back as
+    /// it closes. It finishes before the content starts, because the content
+    /// paints its own black and would show as a darker rectangle otherwise.
+    static func backgroundAlpha(_ p: CGFloat) -> CGFloat { smoothstep(0, 0.55, p) }
+    static func contentAlpha(_ p: CGFloat) -> CGFloat { smoothstep(0.55, 0.95, p) }
     /// Content settles downward into place while the body opens.
     static func contentDrop(_ p: CGFloat) -> CGFloat { 8 * (1 - smoothstep(0.3, 1, p)) }
-    /// Squares the wing's lower-right corner as soon as the body hangs below it.
-    static func attach(_ p: CGFloat) -> CGFloat { smoothstep(0, 0.12, p) }
+    /// Squares the wing's lower-right corner as the body fades in below it.
+    static func attach(_ p: CGFloat) -> CGFloat { smoothstep(0, 0.3, p) }
 
     static func smoothstep(_ a: CGFloat, _ b: CGFloat, _ x: CGFloat) -> CGFloat {
         let t = min(max((x - a) / (b - a), 0), 1)
@@ -582,8 +586,8 @@ struct Spring {
         var response: Double
         var damping: Double
     }
-    static let opening = Parameters(response: 0.42, damping: 0.8)
-    static let closing = Parameters(response: 0.26, damping: 1)
+    static let opening = Parameters(response: 0.5, damping: 0.85)
+    static let closing = Parameters(response: 0.34, damping: 1)
 
     private(set) var value: Double = 0
     private(set) var velocity: Double = 0
@@ -909,8 +913,8 @@ final class IslandContentView: NSView {
 
 // MARK: - Details island
 
-/// Draws the black silhouette for the current progress and reveals the
-/// content inside the body as it opens.
+/// Draws the silhouette for the current progress, fading it between
+/// transparent and black, and reveals the content inside the body as it opens.
 final class IslandView: NSView {
     let content: IslandContentView
     private let clip = NSView()
@@ -960,7 +964,7 @@ final class IslandView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let layout else { return }
-        NSColor.black.setFill()
+        NSColor.black.withAlphaComponent(Choreography.backgroundAlpha(progress)).setFill()
         layout.path(at: progress).fill()
     }
 
@@ -1095,7 +1099,8 @@ final class IslandPresenter: NSObject {
     }
 
     @objc private func tick(_ link: CADisplayLink) {
-        let now = CACurrentMediaTime()
+        // Step by presented frame time; callback time jitters from frame to frame.
+        let now = link.targetTimestamp
         spring.advance(by: now - lastTick)
         lastTick = now
         apply(CGFloat(spring.value))
