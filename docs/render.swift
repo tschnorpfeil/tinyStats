@@ -7,12 +7,21 @@ let canvasSize = NSSize(width: 480, height: 230)
 
 final class PreviewCanvas: NSView {
     var housing: NSRect?
+    var social = false
     override func draw(_ dirtyRect: NSRect) {
         NSGradient(starting: NSColor(srgbRed: 0.16, green: 0.20, blue: 0.35, alpha: 1),
                    ending: NSColor(srgbRed: 0.34, green: 0.40, blue: 0.53, alpha: 1))!
             .draw(in: bounds, angle: -65)
         NSColor.white.withAlphaComponent(0.04).setFill()
         NSRect(x: 0, y: bounds.maxY - 32, width: bounds.width, height: 32).fill()
+        if social {
+            ("tinyStats" as NSString).draw(at: NSPoint(x: 32, y: 194), withAttributes: [
+                .font: NSFont.systemFont(ofSize: 43, weight: .semibold), .foregroundColor: NSColor.white])
+            ("Your Mac, at a glance." as NSString).draw(at: NSPoint(x: 34, y: 162), withAttributes: [
+                .font: NSFont.systemFont(ofSize: 17, weight: .regular), .foregroundColor: NSColor.white.withAlphaComponent(0.8)])
+            ("CPU · GPU · RAM · Network" as NSString).draw(at: NSPoint(x: 34, y: 42), withAttributes: [
+                .font: NSFont.systemFont(ofSize: 14, weight: .medium), .foregroundColor: NSColor.white.withAlphaComponent(0.7)])
+        }
         if let housing {
             NSColor.black.setFill()
             let path = NSBezierPath(roundedRect: housing, xRadius: 14.6, yRadius: 14.6)
@@ -21,12 +30,13 @@ final class PreviewCanvas: NSView {
         }
     }
 }
-func writePreview(notch: Bool, collapsed: Bool = false, to path: String) throws {
-    let canvasSize = collapsed ? NSSize(width: 480, height: 88) : canvasSize
+func writePreview(notch: Bool, collapsed: Bool = false, social: Bool = false, to path: String) throws {
+    let canvasSize = social ? NSSize(width: 640, height: 320) : collapsed ? NSSize(width: 480, height: 88) : canvasSize
     let barBottom = canvasSize.height - 32
     let canvas = PreviewCanvas(frame: NSRect(origin: .zero, size: canvasSize))
+    canvas.social = social
     canvas.appearance = NSAppearance(named: .darkAqua)
-    let wing = NotchWing(notch: NSRect(x: 114, y: barBottom, width: 179, height: 32))
+    let wing = NotchWing(notch: NSRect(x: social ? 348 : 114, y: barBottom, width: 179, height: 32))
     let anchor = NSRect(x: 207, y: barBottom, width: 66, height: 32)
     let layout = notch ? IslandLayout.notch(wing, height: IslandContentView.height)
         : IslandLayout.menuBar(anchor: anchor, screen: canvas.bounds, visibleTop: barBottom, height: IslandContentView.height)
@@ -61,3 +71,4 @@ func writePreview(notch: Bool, collapsed: Bool = false, to path: String) throws 
 try writePreview(notch: true, to: "docs/images/notch.png")
 try writePreview(notch: false, to: "docs/images/menu-bar.png")
 try writePreview(notch: true, collapsed: true, to: "docs/images/notch-collapsed.png")
+try writePreview(notch: true, social: true, to: "docs/images/social-preview.png")
