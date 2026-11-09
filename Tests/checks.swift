@@ -449,20 +449,37 @@ func simulate(_ phases: [(Double, Spring.Parameters, Double)]) -> [Double] {
     }
     return values
 }
+func settleFrame(_ values: [Double], at target: Double) -> Int {
+    (values.lastIndex(where: { $0 != target }) ?? -1) + 1
+}
 let opening = simulate([(1, Spring.opening, 1.5)])
-assert(opening.max()! <= 1.02, "Opening overshoot stays subtle")
-assert(opening.firstIndex(where: { $0 >= 0.95 })! <= 18, "Opening reaches 95 % within 300 ms")
-assert(opening.last == 1, "Opening settles exactly")
-let closing = simulate([(1, Spring.opening, 1.5), (0, Spring.closing, 1)]).suffix(61)
-assert(closing.min()! >= -0.001 && closing.last == 0, "Closing settles at zero without undershoot")
+assert(opening.allSatisfy { (0...1).contains($0) }, "Opening never overshoots")
+for (a, b) in zip(opening, opening.dropFirst()) { assert(b >= a, "Opening never rebounds") }
+assert(opening.firstIndex(where: { $0 >= 0.95 })! <= 15, "Opening reaches 95 % within 250 ms")
+assert(settleFrame(opening, at: 1) <= 30, "Opening settles exactly within 500 ms")
+let closing = Array(simulate([(1, Spring.opening, 1.5), (0, Spring.closing, 1)]).suffix(61))
+assert(closing.allSatisfy { (0...1).contains($0) }, "Closing never undershoots")
+for (a, b) in zip(closing, closing.dropFirst()) { assert(b <= a, "Closing never rebounds") }
+assert(closing.firstIndex(where: { $0 <= 0.05 })! <= 12, "Closing reaches 5 % within 200 ms")
+assert(settleFrame(closing, at: 0) <= 24, "Closing settles exactly within 400 ms")
+assert(Spring.closing.response < Spring.opening.response, "Closing is quicker than opening")
 let reversal = simulate([(1, Spring.opening, 0.12), (0, Spring.closing, 0.1), (1, Spring.opening, 1.5)])
 for (a, b) in zip(reversal, reversal.dropFirst()) { assert(abs(b - a) <= 0.12, "Reversal stays continuous") }
-assert(reversal.last == 1)
+assert(reversal.allSatisfy { (0...1).contains($0) }, "Reversal never leaves 0...1")
+assert(settleFrame(reversal, at: 1) <= 12 + 6 + 30, "Reversal settles within 500 ms of the last retarget")
+let closeReversal = simulate([(1, Spring.opening, 1), (0, Spring.closing, 0.08), (1, Spring.opening, 1)])
+assert(closeReversal.allSatisfy { (0...1).contains($0) } && closeReversal.last == 1, "Reopening mid-close never overshoots")
+var flicker = Spring()
+for i in 0..<120 {
+    flicker.retarget(Double(i / 3 % 2 == 0 ? 1 : 0), i / 3 % 2 == 0 ? Spring.opening : Spring.closing)
+    flicker.advance(by: 1.0 / 120)
+    assert((0...1).contains(flicker.value), "Rapid retargeting never leaves 0...1")
+}
 var stalled = Spring()
 stalled.retarget(1, Spring.opening)
 stalled.advance(by: 2)
 assert(stalled.value < 0.5, "A stalled frame slows the motion instead of jumping to the end")
-print("PASS: spring opening/closing/reversal continuity, choreography ranges, stall handling")
+print("PASS: spring no-overshoot open/close/reversal, settle times, choreography ranges, stall handling")
 
 // MARK: Content: fixed layout, fits all states, no re-layout on samples
 
