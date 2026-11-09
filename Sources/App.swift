@@ -45,7 +45,6 @@ final class App: NSObject, NSApplicationDelegate {
         button.setAccessibilityLabel("tinyStats")
         button.target = self
         button.action = #selector(statusItemClicked)
-        content.onQuit = { NSApp.terminate(nil) }
         content.onNotchToggle = { [weak self] enabled in
             UserDefaults.standard.set(enabled, forKey: Self.notchDefaultsKey)
             self?.updatePlacement()

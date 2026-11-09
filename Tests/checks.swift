@@ -552,10 +552,8 @@ offMenu.performActionForItem(at: offMenu.indexOfItem(withTitle: IslandContentVie
 assert(toggled == false && notchOption()?.state == .off, "The same item turns it back off")
 assert(notchMenu.items.map(\.title).firstIndex(of: IslandContentView.notchOptionTitle) == 5 && notchMenu.items[4].title.hasPrefix("Menu Bar"),
        "The option sits directly below the menu bar choice")
-var quit = 0
-controls.onQuit = { quit += 1 }
-controls.quitButton.performClick(nil)
-assert(quit == 1 && controls.quitButton.accessibilityRole() == .button)
+assert(controls.quitButton.target === NSApp && controls.quitButton.action == #selector(NSApplication.terminate(_:)) &&
+       controls.quitButton.accessibilityRole() == .button)
 controls.update(Sample(cpu: nil, gpu: 0, ram: 0.5, net: nil))
 assert(controls.tiles[0].accessibilityValue() as? String == "Not available" && controls.tiles[1].accessibilityValue() as? String == "0 %")
 assert((controls.network.accessibilityValue() as? String)?.contains("not available") == true)
@@ -806,8 +804,8 @@ for hasBattery in [true, false] {
         view.setMetricLayout(layout)
         assert(view.frame.height == IslandContentView.height)
         for tile in view.tiles {
-            let caption = IslandStyle.text(tile.metric.caption, IslandStyle.caption, IslandStyle.secondary, kern: 0.4).size().width
-            assert(caption + 3 + MetricView.boltSize.width <= tile.frame.width, "\(tile.metric) caption and bolt fit a tile")
+            let caption = IslandStyle.heading(tile.metric.caption).size().width
+            assert(caption + 3 + IslandStyle.boltSize.width <= tile.frame.width, "\(tile.metric) caption and bolt fit a tile")
         }
     } } }
 }
@@ -818,14 +816,14 @@ let widestSample = Sample(cpu: 1, gpu: 1, ram: 1, battery: BatteryStatus(fractio
                           swapUsedBytes: 999_900_000_000)
 let narrowestColumn = IslandContentView.columnWidth(inner: IslandLayout.minimumWidth - 2 * IslandContentView.padding)
 for category in MetricCategory.allCases {
-    let header = IslandStyle.text(category.rawValue.uppercased(), IslandStyle.caption, IslandStyle.secondary, kern: 0.4).size().width
+    let header = IslandStyle.heading(category.rawValue.uppercased()).size().width
     assert(header <= narrowestColumn, "\(category) heading fits a column at the narrowest width")
 }
 for metric in Metric.allCases {
     for cell in metric.cells(widestSample) {
         let label = IslandStyle.text(cell.label, IslandStyle.listLabel, IslandStyle.secondary).size().width
         let value = MetricListView.valueText(cell.value).size().width
-        assert(label + (cell.bolt ? 3 + MetricView.boltSize.width : 0) <= narrowestColumn && value <= narrowestColumn,
+        assert(label + (cell.bolt ? 3 + IslandStyle.boltSize.width : 0) <= narrowestColumn && value <= narrowestColumn,
                "\(cell.label) \(cell.value) fits a column at the narrowest width (\(narrowestColumn), value \(value))")
     }
 }

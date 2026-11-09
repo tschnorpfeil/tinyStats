@@ -17,6 +17,7 @@ enum IslandStyle {
     static let footer = NSFont.systemFont(ofSize: 11, weight: .medium)
     static let listLabel = NSFont.systemFont(ofSize: 11, weight: .medium)
     static let listValue = rounded(12, .semibold)
+    static let boltSize = NSSize(width: 6, height: 9)
 
     /// SF Pro Rounded with tabular digits, so 1 Hz updates do not wobble.
     static func rounded(_ size: CGFloat, _ weight: NSFont.Weight) -> NSFont {
@@ -32,6 +33,9 @@ enum IslandStyle {
         NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color, .kern: kern])
     }
 
+    /// Tile captions and category headings.
+    static func heading(_ string: String) -> NSAttributedString { text(string, caption, secondary, kern: 0.4) }
+
     /// Number with a smaller unit on the same baseline; a dim dash when missing.
     static func measure(_ formatted: String, number: NSFont, unit: NSFont) -> NSAttributedString {
         let parts = Format.split(formatted)
@@ -41,29 +45,39 @@ enum IslandStyle {
         return result
     }
 
-    /// SF Symbol, centred vertically in a flipped view.
-    static func drawSymbol(_ name: String, _ configuration: NSImage.SymbolConfiguration, x: CGFloat, in bounds: NSRect,
+    /// Label with a charging bolt after it when `bolt`.
+    static func drawLabel(_ label: NSAttributedString, at origin: NSPoint, bolt: Bool) {
+        label.draw(at: origin)
+        guard bolt else { return }
+        MenuBarIndicators.drawBolt(in: NSRect(origin: NSPoint(x: origin.x + ceil(label.size().width) + 3, y: origin.y + 2),
+                                              size: boltSize), color: secondary, flipped: true)
+    }
+
+    /// SF Symbol, centred vertically in `row` of a flipped view.
+    static func drawSymbol(_ name: String, _ configuration: NSImage.SymbolConfiguration, x: CGFloat, in row: NSRect,
                            alignRight: Bool = false) {
         guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
         else { return }
-        let size = image.size
-        image.draw(in: NSRect(x: alignRight ? x - size.width : x, y: ((bounds.height - size.height) / 2).rounded(),
-                              width: size.width, height: size.height),
+        image.draw(in: centered(image.size, x: x, in: row, alignRight: alignRight),
                    from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     }
 
-    static func drawCentered(_ text: NSAttributedString, x: CGFloat, in bounds: NSRect, alignRight: Bool = false) {
+    static func drawCentered(_ text: NSAttributedString, x: CGFloat, in row: NSRect, alignRight: Bool = false) {
         let size = text.size()
-        let width = ceil(size.width), height = ceil(size.height)
-        text.draw(in: NSRect(x: alignRight ? x - width : x, y: ((bounds.height - height) / 2).rounded(),
-                             width: width, height: height))
+        text.draw(in: centered(NSSize(width: ceil(size.width), height: ceil(size.height)), x: x, in: row, alignRight: alignRight))
+    }
+
+    /// Starts at `x`, or ends there when `alignRight`; whole-point vertical centring keeps text crisp.
+    private static func centered(_ size: NSSize, x: CGFloat, in row: NSRect, alignRight: Bool) -> NSRect {
+        NSRect(x: alignRight ? x - size.width : x, y: row.minY + ((row.height - size.height) / 2).rounded(),
+               width: size.width, height: size.height)
     }
 }
 
 /// Flipped view that draws its text itself and reads as one text to VoiceOver.
 class ReadoutView: NSView {
-    init(label: String, frame: NSRect = .zero) {
-        super.init(frame: frame)
+    init(label: String) {
+        super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
         setAccessibilityLabel(label)
@@ -77,14 +91,14 @@ class ReadoutView: NSView {
 /// Caption, value and a thin proportional meter for one gauge.
 final class MetricView: ReadoutView {
     static let height: CGFloat = 50
-    static let boltSize = NSSize(width: 6, height: 9)
     var metric: Metric { didSet { if metric != oldValue { describeMetric(); needsDisplay = true } } }
-    var value: Double? { didSet { if value != oldValue { needsDisplay = true } } }
-    var charging = false { didSet { if charging != oldValue { needsDisplay = true } } }
+    var sample = Sample() { didSet { if sample != oldValue { needsDisplay = true } } }
+    var value: Double? { metric.fraction(sample) }
+    var charging: Bool { metric.isCharging(sample) }
 
     init(metric: Metric) {
         self.metric = metric
-        super.init(label: metric.name, frame: NSRect(x: 0, y: 0, width: 70, height: Self.height))
+        super.init(label: metric.name)
         describeMetric()
     }
 
@@ -104,12 +118,7 @@ final class MetricView: ReadoutView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let caption = IslandStyle.text(metric.caption, IslandStyle.caption, IslandStyle.secondary, kern: 0.4)
-        caption.draw(at: NSPoint(x: 0, y: 0))
-        if charging {
-            MenuBarIndicators.drawBolt(in: NSRect(origin: NSPoint(x: ceil(caption.size().width) + 3, y: 2), size: Self.boltSize),
-                                       color: IslandStyle.secondary, flipped: true)
-        }
+        IslandStyle.drawLabel(IslandStyle.heading(metric.caption), at: .zero, bolt: charging)
         IslandStyle.measure(Format.percent(value), number: IslandStyle.value, unit: IslandStyle.valueUnit)
             .draw(at: NSPoint(x: -1, y: 12))
         Self.drawMeter(in: NSRect(x: 0, y: bounds.height - 3, width: bounds.width, height: 3), value: value)
@@ -201,17 +210,11 @@ final class MetricListView: ReadoutView {
         let column = IslandContentView.columnWidth(inner: bounds.width)
         for (index, group) in Metric.grouped(metrics).enumerated() {
             let x = CGFloat(index) * (column + IslandContentView.columnGap)
-            IslandStyle.text(group.category.rawValue.uppercased(), IslandStyle.caption, IslandStyle.secondary, kern: 0.4)
-                .draw(at: NSPoint(x: x, y: 0))
+            IslandStyle.heading(group.category.rawValue.uppercased()).draw(at: NSPoint(x: x, y: 0))
             for (row, cell) in group.metrics.flatMap({ $0.cells(sample) }).enumerated() {
                 let y = Self.headerHeight + CGFloat(row) * Self.rowHeight
-                let label = IslandStyle.text(cell.label, IslandStyle.listLabel, IslandStyle.secondary)
-                label.draw(at: NSPoint(x: x, y: y))
-                if cell.bolt {
-                    MenuBarIndicators.drawBolt(in: NSRect(origin: NSPoint(x: x + ceil(label.size().width) + 3, y: y + 2),
-                                                          size: MetricView.boltSize),
-                                               color: IslandStyle.secondary, flipped: true)
-                }
+                IslandStyle.drawLabel(IslandStyle.text(cell.label, IslandStyle.listLabel, IslandStyle.secondary),
+                                      at: NSPoint(x: x, y: y), bolt: cell.bolt)
                 Self.valueText(cell.value).draw(at: NSPoint(x: x, y: y + 12))
             }
         }
@@ -221,7 +224,6 @@ final class MetricListView: ReadoutView {
 /// Quiet text action that brightens under the pointer.
 final class TextButton: NSButton {
     private var hovering = false { didSet { needsDisplay = true } }
-    private var area: NSTrackingArea?
     private var symbol: String?
 
     convenience init(label: String, symbol: String? = nil) {
@@ -232,15 +234,9 @@ final class TextButton: NSButton {
         focusRingType = .none
         setAccessibilityRole(.button)
         setAccessibilityLabel(label)
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let area { removeTrackingArea(area) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                  owner: self, userInfo: nil)
-        addTrackingArea(area)
-        self.area = area
+        // `.inVisibleRect` follows every frame change, so one area is enough.
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
     }
 
     override func mouseEntered(with event: NSEvent) { hovering = true }
@@ -274,7 +270,6 @@ final class IslandContentView: NSView {
 
     let hasBattery: Bool
     private(set) var metricLayout = MetricLayout()
-    private var sample = Sample()
     let tiles = MetricLayout.standardTop.map { MetricView(metric: $0) }
     let network = NetworkView()
     let list = MetricListView()
@@ -282,7 +277,6 @@ final class IslandContentView: NSView {
     let quitButton = TextButton(label: "Quit")
     private var notchAvailable = false
     private var notchEnabled = false
-    var onQuit: (() -> Void)?
     var onNotchToggle: ((Bool) -> Void)?
     var onLayoutChange: ((MetricLayout) -> Void)?
 
@@ -294,8 +288,8 @@ final class IslandContentView: NSView {
         customizeButton.target = self
         customizeButton.action = #selector(customizeClicked)
         customizeButton.toolTip = "Settings"
-        quitButton.target = self
-        quitButton.action = #selector(quitClicked)
+        quitButton.target = NSApplication.shared
+        quitButton.action = #selector(NSApplication.terminate(_:))
         quitButton.setAccessibilityLabel("Quit tinyStats")
         quitButton.toolTip = "Quit tinyStats (⌘Q)"
         (tiles as [NSView] + [network, list, customizeButton, quitButton]).forEach(addSubview)
@@ -327,17 +321,12 @@ final class IslandContentView: NSView {
         dirtyRect.fill()
         let mark = NSMutableAttributedString(attributedString: IslandStyle.text("tiny", IslandStyle.footer, IslandStyle.tertiary))
         mark.append(IslandStyle.text("Stats", NSFont.systemFont(ofSize: 11, weight: .semibold), IslandStyle.secondary))
-        let size = mark.size()
-        mark.draw(in: NSRect(x: Self.padding, y: Self.footerTop + ((Self.footerHeight - ceil(size.height)) / 2).rounded(),
-                             width: ceil(size.width), height: ceil(size.height)))
+        IslandStyle.drawCentered(mark, x: Self.padding,
+                                 in: NSRect(x: 0, y: Self.footerTop, width: bounds.width, height: Self.footerHeight))
     }
 
     func update(_ sample: Sample) {
-        self.sample = sample
-        for tile in tiles {
-            tile.value = tile.metric.fraction(sample)
-            tile.charging = tile.metric.isCharging(sample)
-        }
+        tiles.forEach { $0.sample = sample }
         network.rates = sample.net
         list.sample = sample
     }
@@ -347,7 +336,6 @@ final class IslandContentView: NSView {
         metricLayout = layout
         for (tile, metric) in zip(tiles, layout.top) { tile.metric = metric }
         list.metrics = layout.listed(hasBattery: hasBattery)
-        update(sample)
     }
 
     private static let menuBarSlot = 3
@@ -424,8 +412,6 @@ final class IslandContentView: NSView {
         notchAvailable = available
         notchEnabled = enabled
     }
-
-    @objc private func quitClicked() { onQuit?() }
 
     @objc private func notchToggled() {
         notchEnabled.toggle()
