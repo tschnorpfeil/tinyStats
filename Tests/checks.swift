@@ -252,6 +252,15 @@ assert(builtInWing.notch == NSRect(x: 897.5, y: -32, width: 185, height: 32) && 
        "A notch on a secondary display keeps its wing at that display's top edge")
 assert(builtInScreen.contains(IslandLayout.notch(builtInWing, height: IslandContentView.height).frame),
        "The attached details stay on the notched secondary display")
+let externalPrimary = NSRect(x: 0, y: 0, width: 1920, height: 1200)
+assert(builtInWing.needsStatusItem(screens: [externalPrimary, builtInScreen], separateSpaces: true),
+       "The external menu bar keeps the status item beside a wing on the built-in display")
+assert(builtInWing.needsStatusItem(screens: [externalPrimary, builtInScreen], separateSpaces: false),
+       "A primary display without the wing keeps the status item")
+assert(!builtInWing.needsStatusItem(screens: [builtInScreen], separateSpaces: true),
+       "The built-in display alone needs only the wing")
+assert(!builtInWing.needsStatusItem(screens: [builtInScreen, externalPrimary], separateSpaces: false),
+       "Without separate Spaces a secondary display has no menu bar to fill")
 let notchedScreens = NSScreen.screens.filter { $0.auxiliaryTopLeftArea != nil && $0.auxiliaryTopRightArea != nil }
 if notchedScreens.isEmpty {
     assert(NotchWing.firstAvailable(on: NSScreen.screens) == nil, "No notch, no wing")
