@@ -62,7 +62,7 @@ final class App: NSObject, NSApplicationDelegate {
             // Only join the lower corner; the compact wing never changes width.
             // A card floating under the status item leaves the wing alone.
             let attached = self.presenter.view.layout?.isFloating == false
-            self.wingPanel.follow(attach: attached ? Choreography.attach(progress) : 0)
+            self.wingPanel.wingView.attach = attached ? Choreography.attach(progress) : 0
         }
         presenter.onPresentedChange = { [weak self] shown in
             let highlighted = shown && self?.presenter.view.layout?.isFloating == true

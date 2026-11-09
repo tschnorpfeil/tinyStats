@@ -6,7 +6,7 @@ import QuartzCore
 /// Draws the silhouette for the current progress, fading it between
 /// transparent and black, and reveals the content inside the body as it opens.
 final class IslandView: NSView {
-    let content: IslandContentView
+    private let content: IslandContentView
     private let clip = NSView()
     private(set) var layout: IslandLayout?
     private(set) var progress: CGFloat = 0
@@ -19,7 +19,6 @@ final class IslandView: NSView {
         clip.clipsToBounds = true
         clip.autoresizesSubviews = false
         clip.layer?.masksToBounds = true
-        clip.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         addSubview(clip)
         clip.addSubview(content)
     }
@@ -61,10 +60,10 @@ final class IslandView: NSView {
     func shapeContains(_ point: NSPoint) -> Bool { layout?.path(at: progress).contains(point) ?? false }
 }
 
-final class IslandPanel: NSPanel {
-    var onCancel: (() -> Void)?
-
-    init() {
+/// Clear, borderless, non-activating window at menu bar level on every Space.
+/// Never pushed below the menu bar: the wing and the island live in it.
+class OverlayPanel: NSPanel {
+    init(contentView: NSView) {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         isOpaque = false
         backgroundColor = .clear
@@ -76,13 +75,24 @@ final class IslandPanel: NSPanel {
         isMovable = false
         animationBehavior = .none
         allowsToolTipsWhenApplicationIsInactive = true
+        self.contentView = contentView
+    }
+
+    override var canBecomeMain: Bool { false }
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+}
+
+/// Becomes key so Escape and ⌘Q reach it, without activating the app.
+final class IslandPanel: OverlayPanel {
+    var onCancel: (() -> Void)?
+
+    override init(contentView: NSView) {
+        super.init(contentView: contentView)
         appearance = NSAppearance(named: .darkAqua)
         setAccessibilityLabel("tinyStats")
     }
 
     override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
     override func cancelOperation(_ sender: Any?) { onCancel?() }
 }
 
@@ -90,7 +100,7 @@ final class IslandPanel: NSPanel {
 /// driven by one spring on the display link. Reversals retarget in flight.
 final class IslandPresenter: NSObject {
     let view: IslandView
-    let panel = IslandPanel()
+    let panel: IslandPanel
     private(set) var spring = Spring()
     private(set) var isPresented = false
     private var link: CADisplayLink?
@@ -105,8 +115,8 @@ final class IslandPresenter: NSObject {
 
     init(content: IslandContentView) {
         view = IslandView(content: content)
+        panel = IslandPanel(contentView: view)
         super.init()
-        panel.contentView = view
         panel.onCancel = { [weak self] in self?.close() }
     }
 
@@ -324,38 +334,18 @@ final class WingView: NSView {
     override func accessibilityPerformPress() -> Bool { onClick?(); return true }
 }
 
-final class WingPanel: NSPanel {
-    convenience init() {
-        self.init(contentRect: NSRect(x: 0, y: 0, width: 100, height: 32),
-                  styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = false
-        level = .statusBar
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-        hidesOnDeactivate = false
-        isReleasedWhenClosed = false
-        isMovable = false
-        animationBehavior = .none
-        becomesKeyOnlyIfNeeded = true
-        allowsToolTipsWhenApplicationIsInactive = true
-        contentView = WingView(frame: NSRect(x: 0, y: 0, width: 100, height: 32))
-    }
+/// Never key: a click on the wing leaves focus where it was.
+final class WingPanel: OverlayPanel {
+    let wingView = WingView()
 
-    var wingView: WingView { contentView as! WingView }
+    init() { super.init(contentView: wingView) }
+
     override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-    // Keep the frame at the top edge beside the housing instead of below the menu bar.
-    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 
     func place(_ wing: NotchWing) {
         wingView.wing = wing
+        wingView.attach = 0
         setFrame(wing.frame, display: false)
         wingView.frame = NSRect(origin: .zero, size: wing.frame.size)
-        follow(attach: 0)
-    }
-
-    func follow(attach: CGFloat) {
-        wingView.attach = attach
     }
 }

@@ -160,7 +160,6 @@ struct NotchWing: Equatable {
 /// Where the details hang and how they grow out of their source. Global
 /// coordinates; `path`, `bodyRect` and `finalBodyRect` use window coordinates.
 struct IslandLayout: Equatable {
-    static let fillet: CGFloat = 10
     static let cornerRadius: CGFloat = 22
     static let menuBarWidth: CGFloat = 272
     /// Narrowest width that still fits three columns, the network tray and the footer.
@@ -172,8 +171,6 @@ struct IslandLayout: Equatable {
     var source: ClosedRange<CGFloat>
     var final: ClosedRange<CGFloat>
     var height: CGFloat
-    var leftFillet: CGFloat
-    var rightFillet: CGFloat
     var housingCapHeight: CGFloat = 0
     var isFloating: Bool = false
 
@@ -181,8 +178,7 @@ struct IslandLayout: Equatable {
     /// Overlap the fractional lower edge to avoid a seam between windows.
     static func notch(_ wing: NotchWing, height: CGFloat) -> IslandLayout {
         IslandLayout(attachY: wing.notch.minY.rounded(.up), source: wing.notch.maxX...wing.wingMaxX,
-                     final: wing.notch.minX...wing.wingMaxX, height: height,
-                     leftFillet: 0, rightFillet: 0, housingCapHeight: wing.notch.maxY - wing.notch.minY.rounded(.up))
+                     final: wing.notch.minX...wing.wingMaxX, height: height, housingCapHeight: wing.notch.maxY - wing.notch.minY.rounded(.up))
     }
 
     /// From the menu bar's lower edge, centred under the status item.
@@ -196,23 +192,22 @@ struct IslandLayout: Equatable {
         let sourceLow = min(max(anchor.minX, low), high)
         let sourceHigh = max(min(anchor.maxX, high), sourceLow)
         return IslandLayout(attachY: barBottom - 6, source: sourceLow...sourceHigh, final: minX...(minX + width),
-                            height: height, leftFillet: 0, rightFillet: 0, isFloating: true)
+                            height: height, isFloating: true)
     }
 
     var width: CGFloat { final.upperBound - final.lowerBound }
 
     /// Whole-point frame; notch mode also covers the housing cutout above the attach line.
     var frame: NSRect {
-        let minX = (min(source.lowerBound, final.lowerBound) - leftFillet).rounded(.down)
-        let maxX = (max(source.upperBound, final.upperBound) + rightFillet).rounded(.up)
+        let minX = min(source.lowerBound, final.lowerBound).rounded(.down)
+        let maxX = max(source.upperBound, final.upperBound).rounded(.up)
         let top = (attachY + housingCapHeight).rounded(.up)
         let bottom = (attachY - height - Self.headroom).rounded(.down)
         return NSRect(x: minX, y: bottom, width: maxX - minX, height: top - bottom)
     }
 
     struct Shape: Equatable {
-        var minX: CGFloat, maxX: CGFloat, height: CGFloat
-        var leftFillet: CGFloat, rightFillet: CGFloat, radius: CGFloat
+        var minX: CGFloat, maxX: CGFloat, height: CGFloat, radius: CGFloat
     }
 
     func shape(at progress: CGFloat) -> Shape {
@@ -220,12 +215,9 @@ struct IslandLayout: Equatable {
         let minX = source.lowerBound + (final.lowerBound - source.lowerBound) * grow
         let maxX = source.upperBound + (final.upperBound - source.upperBound) * grow
         let h = min(height + Self.headroom, max(0, height * progress))
-        let left = min(leftFillet, h / 2), right = min(rightFillet, h / 2)
-        let radius = max(0, min(Self.cornerRadius, (maxX - minX) / 2, h - max(left, right)))
-        return Shape(minX: minX, maxX: maxX, height: h, leftFillet: left, rightFillet: right, radius: radius)
+        return Shape(minX: minX, maxX: maxX, height: h, radius: min(Self.cornerRadius, (maxX - minX) / 2, h))
     }
 
-    /// Body without fillets.
     func bodyRect(at progress: CGFloat) -> NSRect {
         let s = shape(at: progress)
         return NSRect(x: s.minX - frame.minX, y: attachY - frame.minY - s.height,
@@ -247,12 +239,8 @@ struct IslandLayout: Equatable {
         }
         let left = s.minX - frame.minX, right = s.maxX - frame.minX
         let top = attachY - frame.minY, bottom = top - s.height
-        path.move(to: NSPoint(x: left - s.leftFillet, y: top))
-        path.line(to: NSPoint(x: right + s.rightFillet, y: top))
-        if s.rightFillet > 0.01 {
-            path.appendArc(withCenter: NSPoint(x: right + s.rightFillet, y: top - s.rightFillet),
-                           radius: s.rightFillet, startAngle: 90, endAngle: 180, clockwise: false)
-        }
+        path.move(to: NSPoint(x: left, y: top))
+        path.line(to: NSPoint(x: right, y: top))
         path.line(to: NSPoint(x: right, y: bottom + s.radius))
         if s.radius > 0.01 {
             path.appendArc(withCenter: NSPoint(x: right - s.radius, y: bottom + s.radius),
@@ -262,11 +250,6 @@ struct IslandLayout: Equatable {
         if s.radius > 0.01 {
             path.appendArc(withCenter: NSPoint(x: left + s.radius, y: bottom + s.radius),
                            radius: s.radius, startAngle: 270, endAngle: 180, clockwise: true)
-        }
-        path.line(to: NSPoint(x: left, y: top - s.leftFillet))
-        if s.leftFillet > 0.01 {
-            path.appendArc(withCenter: NSPoint(x: left - s.leftFillet, y: top - s.leftFillet),
-                           radius: s.leftFillet, startAngle: 0, endAngle: 90, clockwise: false)
         }
         path.close()
         // Fill the housing's lower-left rounded cutout as the island reaches

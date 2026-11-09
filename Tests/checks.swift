@@ -275,9 +275,8 @@ let shiftedWing = NotchWing.make(screenFrame: shiftedScreen, leftArea: scoutLeft
 assert(shiftedWing.frame == wing.frame.offsetBy(dx: -1470, dy: 300) && shiftedWing.bottomY == wing.bottomY,
        "Non-zero screen origin must be honoured")
 for candidate in [wing, publicWing, tallWing, shiftedWing] {
-    for f in [candidate.frame, candidate.frame] {
-        assert(f.minX == f.minX.rounded() && f.width == f.width.rounded() && f.minY == f.minY.rounded() && f.height == f.height.rounded())
-    }
+    let f = candidate.frame
+    assert(f.minX == f.minX.rounded() && f.width == f.width.rounded() && f.minY == f.minY.rounded() && f.height == f.height.rounded())
 }
 assert(NotchWing.make(screenFrame: shiftedScreen, leftArea: scoutLeft,
                       rightArea: scoutRight, topInset: 32) == nil, "Areas outside the given screen must not be used")
@@ -385,10 +384,8 @@ assert(notchLayout.attachY == wing.notch.minY.rounded(.up) && notchLayout.attach
        "Top edge on the first whole point above the housing's lower edge: hidden behind housing and wing")
 assert(abs(notchLayout.frame.maxY - wing.notch.maxY) <= 1,
        "Open window reaches behind the housing to fill its rounded lower-left cutout")
-assert(notchLayout.final.lowerBound == wing.notch.minX && notchLayout.final.upperBound == wing.wingMaxX)
-assert(notchLayout.final.upperBound == wing.wingMaxX && notchLayout.rightFillet == 0, "Right edge continues the fixed wing")
-assert(notchLayout.final.lowerBound == wing.notch.minX && notchLayout.leftFillet == 0,
-       "Expanded left edge exactly matches the notch, with no inset or protruding fillet")
+assert(notchLayout.final.lowerBound == wing.notch.minX && notchLayout.final.upperBound == wing.wingMaxX,
+       "Expanded edges: exactly the notch on the left, the fixed wing on the right")
 assert(notchLayout.width == wing.notch.width + NotchWing.wingWidth && notchLayout.width >= IslandLayout.minimumWidth)
 assert(notchLayout.frame.minX + notchLayout.finalBodyRect.maxX == wing.wingMaxX,
        "Expanded right edge equals the unchanged compact wing")
@@ -402,7 +399,7 @@ for step in 0...103 {
 }
 let openShape = notchLayout.shape(at: 1)
 assert(openShape.minX == notchLayout.final.lowerBound && openShape.maxX == notchLayout.final.upperBound &&
-       openShape.height == height && openShape.radius == IslandLayout.cornerRadius && openShape.leftFillet == 0)
+       openShape.height == height && openShape.radius == IslandLayout.cornerRadius)
 assert(NotchWing.make(screenFrame: NSRect(x: 0, y: 0, width: 1024, height: 665),
                       leftArea: NSRect(x: 0, y: 633, width: 450, height: 32),
                       rightArea: NSRect(x: 574, y: 633, width: 450, height: 32), topInset: 32) == nil,
@@ -422,7 +419,6 @@ for layout in [notchLayout, publicLayout] {
 }
 let full = notchLayout.path(at: 1)
 let body = notchLayout.finalBodyRect
-let fillet = IslandLayout.fillet
 assert(!full.contains(NSPoint(x: body.minX + 0.5, y: body.minY + 0.5)) &&
        !full.contains(NSPoint(x: body.maxX - 0.5, y: body.minY + 0.5)), "Free lower corners convex")
 assert(full.contains(NSPoint(x: body.maxX - 0.3, y: body.maxY - 0.3)), "Square below the wing")
@@ -433,7 +429,7 @@ let external = NSRect(x: 0, y: 0, width: 2560, height: 1440)
 let anchor = NSRect(x: 2000, y: 1413, width: 92, height: 24)
 let barLayout = IslandLayout.menuBar(anchor: anchor, screen: external, visibleTop: 1410, height: height)
 assert(barLayout.attachY == 1404 && barLayout.frame.maxY <= anchor.minY, "Attached at the bar edge, never over the status item")
-assert(barLayout.isFloating && barLayout.leftFillet == 0 && barLayout.rightFillet == 0 && barLayout.width == IslandLayout.menuBarWidth)
+assert(barLayout.isFloating && barLayout.width == IslandLayout.menuBarWidth)
 assert(abs((barLayout.final.lowerBound + barLayout.final.upperBound) / 2 - anchor.midX) <= 0.5, "Centred under the item")
 assert(IslandLayout.menuBar(anchor: anchor, screen: external, visibleTop: 1440, height: height).attachY == anchor.minY - 6,
        "Auto-hidden bar: attach to the button edge")
@@ -452,7 +448,7 @@ assert(!notchLayout.isFloating && notchLayout.housingCapHeight > 0, "Notch mode 
 let second = external.offsetBy(dx: -2560, dy: 0)
 let secondLayout = IslandLayout.menuBar(anchor: anchor.offsetBy(dx: -2560, dy: 0), screen: second, visibleTop: 1410, height: height)
 assert(secondLayout.frame == barLayout.frame.offsetBy(dx: -2560, dy: 0), "Secondary-screen origin honoured")
-print("PASS: island hangs from the housing, shares the fixed wing's right edge, fillets/corners, bounds, fallback clamp")
+print("PASS: island hangs from the housing, shares the fixed wing's right edge, corners, bounds, fallback clamp")
 
 // MARK: Motion
 
@@ -599,26 +595,25 @@ assert(wingClicks == 2, "While open, the whole band closes")
 assert(wingView.accessibilityRole() == .button && wingView.accessibilityPerformPress() && wingClicks == 3)
 
 let wingPanel = WingPanel()
-assert(wingPanel.styleMask.contains(.borderless) && wingPanel.styleMask.contains(.nonactivatingPanel))
-assert(!wingPanel.isOpaque && wingPanel.backgroundColor == .clear && !wingPanel.hasShadow && !wingPanel.hidesOnDeactivate)
-assert(wingPanel.level == .statusBar && !wingPanel.canBecomeKey && !wingPanel.collectionBehavior.contains(.fullScreenAuxiliary))
-assert(wingPanel.constrainFrameRect(wing.frame, to: nil) == wing.frame)
+let presenter = IslandPresenter(content: IslandContentView(width: notchLayout.width, hasBattery: true))
+let panel = presenter.panel
+for overlay in [wingPanel, panel] as [OverlayPanel] {
+    assert(overlay.styleMask.contains(.borderless) && overlay.styleMask.contains(.nonactivatingPanel) && !overlay.canBecomeMain)
+    assert(!overlay.isOpaque && overlay.backgroundColor == .clear && !overlay.hasShadow && !overlay.hidesOnDeactivate)
+    assert(overlay.level == .statusBar && overlay.animationBehavior == .none && !overlay.collectionBehavior.contains(.fullScreenAuxiliary))
+    assert(overlay.constrainFrameRect(wing.frame, to: nil) == wing.frame, "Never pushed below the menu bar")
+}
+assert(!wingPanel.canBecomeKey && panel.canBecomeKey && panel.appearance?.name == .darkAqua, "Only the island takes keys")
 wingPanel.place(wing)
 assert(wingPanel.frame == wing.frame && wingPanel.wingView.wing == wing)
 let compactFrame = wingPanel.frame
 for step in 0...103 {
-    wingPanel.follow(attach: Choreography.attach(CGFloat(step) / 100))
+    wingPanel.wingView.attach = Choreography.attach(CGFloat(step) / 100)
     assert(wingPanel.frame == compactFrame && wingPanel.wingView.frame.size == compactFrame.size,
            "Opening the details never widens or resizes the menu bar widget")
 }
-wingPanel.follow(attach: 0)
 
-let presenter = IslandPresenter(content: IslandContentView(width: notchLayout.width, hasBattery: true))
-let panel = presenter.panel
 assert(panel.contentView === presenter.view && !presenter.isPresented && presenter.spring.isSettled)
-assert(panel.styleMask.contains(.nonactivatingPanel) && panel.canBecomeKey && !panel.canBecomeMain)
-assert(panel.level == .statusBar && panel.animationBehavior == .none && !panel.collectionBehavior.contains(.fullScreenAuxiliary))
-assert(panel.appearance?.name == .darkAqua && !panel.isOpaque && panel.backgroundColor == .clear)
 var cancelled = 0
 panel.onCancel = { cancelled += 1 }
 panel.cancelOperation(nil)
@@ -763,8 +758,8 @@ chosen.setTop(.network, at: 0)
 assert(chosen.top == [.ram, .battery, .cpu], "Rates have no scale, so they cannot fill a bar")
 chosen.setTop(.disk, at: 9)
 assert(chosen.top == [.ram, .battery, .cpu])
-assert(MetricLayout(storedTop: ["disk", "disk", "nonsense", "cpu"], storedMenuBar: "swap", hasBattery: true).top == [.disk, .cpu, .gpu])
-assert(MetricLayout(storedTop: ["disk", "disk", "nonsense", "cpu"], storedMenuBar: "swap", hasBattery: true).menuBar == .swap)
+let cleaned = MetricLayout(storedTop: ["disk", "disk", "nonsense", "cpu"], storedMenuBar: "swap", hasBattery: true)
+assert(cleaned.top == [.disk, .cpu, .gpu] && cleaned.menuBar == .swap)
 assert(MetricLayout(storedTop: nil, storedMenuBar: "load", hasBattery: true).menuBar == .network, "A saved metric that no longer exists falls back to network")
 let movedToDesktop = MetricLayout(storedTop: ["battery", "disk", "cpu"], storedMenuBar: "usage", hasBattery: false)
 assert(movedToDesktop.top == [.disk, .cpu, .gpu] && movedToDesktop.menuBar == .network, "Settings for a battery fall back on a desktop")
@@ -796,7 +791,7 @@ assert(spokenList.details.hasPrefix("Power: Battery 84 %") && spokenList.details
 
 // Every arrangement of gauges on the tiles fits: no column outgrows the panel.
 for hasBattery in [true, false] {
-    let gauges = Metric.gauges.filter { hasBattery || !$0.needsBattery }
+    let gauges = Metric.gauges(hasBattery: hasBattery)
     for first in gauges { for second in gauges where second != first { for third in gauges where third != first && third != second {
         let layout = MetricLayout(storedTop: [first, second, third].map(\.rawValue), storedMenuBar: nil, hasBattery: hasBattery)
         assert(layout.top == [first, second, third])

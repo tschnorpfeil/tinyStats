@@ -386,9 +386,8 @@ final class IslandContentView: NSView {
             parent.submenu = choicesMenu
             menu.addItem(parent)
         }
-        let gauges = Metric.gauges.filter { hasBattery || !$0.needsBattery }
         for (slot, title) in ["Top Left", "Top Middle", "Top Right"].enumerated() {
-            submenu(title, slot: slot, current: metricLayout.top[slot], choices: gauges)
+            submenu(title, slot: slot, current: metricLayout.top[slot], choices: Metric.gauges(hasBattery: hasBattery))
         }
         menu.addItem(.separator())
         let others = Metric.available(hasBattery: hasBattery).filter { $0 != .network }

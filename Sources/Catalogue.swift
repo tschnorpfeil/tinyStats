@@ -18,6 +18,7 @@ enum Metric: String, CaseIterable {
     var needsBattery: Bool { self == .battery || self == .usage || self == .charging }
 
     static func available(hasBattery: Bool) -> [Metric] { allCases.filter { hasBattery || !$0.needsBattery } }
+    static func gauges(hasBattery: Bool) -> [Metric] { available(hasBattery: hasBattery).filter(\.isGauge) }
 
     /// Nil only for network, which has its own tray.
     var category: MetricCategory? {
@@ -137,7 +138,7 @@ struct MetricLayout: Equatable {
 
     /// Anything stored that is unknown, repeated or unsupported on this Mac is dropped.
     init(storedTop: [String]?, storedMenuBar: String?, hasBattery: Bool) {
-        let usable = Metric.gauges.filter { hasBattery || !$0.needsBattery }
+        let usable = Metric.gauges(hasBattery: hasBattery)
         var picked: [Metric] = []
         for raw in storedTop ?? [] {
             if let metric = Metric(rawValue: raw), usable.contains(metric), !picked.contains(metric), picked.count < 3 {
