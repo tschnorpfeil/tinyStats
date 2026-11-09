@@ -12,33 +12,40 @@ Mit den installierten Xcode Command Line Tools:
 open tinyStats.app
 ```
 
-Die App hat kein Dock-Symbol und richtet keinen Autostart ein. Vor dem Start
-einer neuen Version die alte beenden, damit nur eine Instanz läuft (auch eine
-ältere `Systemstatus.app` aus früheren Builds). Die Bundle-ID bleibt
-`local.hsb.systemstatus`, damit die gespeicherte Notch-Einstellung erhalten
-bleibt.
+Die App hat kein Dock-Symbol und richtet keinen Autostart ein. Sie läuft je
+Sitzung nur einmal: Ein weiterer Start (auch direkt über das Binary, mit
+`open -n` oder eine ältere `Systemstatus.app`) beendet sich sofort mit
+„tinyStats läuft bereits (PID …)“. Für eine neue Version daher erst die
+laufende beenden. Die Bundle-ID bleibt `local.hsb.systemstatus`, damit die
+gespeicherte Notch-Einstellung erhalten bleibt.
+
+In Vorbereitung: ein Terminal-Befehl `tinystats` (start, status, stop,
+update), der die App nach `~/Applications/tinyStats.app` installiert.
 
 Alternativ als einzelnes Binary: `swiftc -O main.swift -o tinystats`, dann `./tinystats`.
 
 ## Anzeige
 
 **Notch-Flügel.** Hat das primäre Display eine Kameraaussparung, sitzt rechts
-daneben ein schwarzer Flügel mit den Indikatoren: drei beschriftete Füllbalken
-(C = CPU, G = GPU, R = RAM) und rechts zweizeilig Upload (↑, oben) und
-Download (↓, unten) in B/K/M/G pro Sekunde. Die Unterkante läuft gerade aus der Notch heraus; dafür reicht die
-Fläche 36 pt hinter das Gehäuse und schließt dessen untere Rundung. Oben
-rechts geht der Flügel mit einer konkaven Gegenkrümmung in die Displaykante
-über, unten rechts endet er mit einer konvexen Rundung.
+daneben ein schmaler schwarzer Flügel mit den Indikatoren: drei Füllbalken
+ohne Beschriftung, fest von links nach rechts CPU, GPU, RAM (Tooltip und
+VoiceOver nennen Namen und Werte), daneben zweizeilig Upload (↑, oben) und
+Download (↓, unten) in B/K/M/G pro Sekunde. Die Unterkante liegt auf der
+tatsächlichen Unterkante des Gehäuses und läuft gerade aus der Notch heraus;
+dafür reicht die Fläche 36 pt hinter das Gehäuse und schließt dessen untere
+Rundung. Oben rechts geht der Flügel mit einer konkaven Gegenkrümmung in die
+Displaykante über, unten rechts endet er mit einer konvexen Rundung.
 
 **Normale Menüleiste.** Ohne Notch (etwa an einem externen Hauptdisplay) oder
 wenn „Notch“ ausgeschaltet ist, erscheint dieselbe Grafik als normales
 Menüleistensymbol.
 
 **Details.** Ein Klick auf Flügel oder Symbol lässt die Details als schwarze
-Insel aus der Quelle wachsen: an der Notch unter Gehäuse und Flügel (rechte
-Kante setzt den Flügel fort, links eine konkave Rundung an die gerade
-Gehäuseunterkante), in der Menüleiste zentriert unter dem Symbol mit konkaven
-Ansätzen an der Unterkante der Leiste. Inhalt:
+Insel aus der Quelle wachsen: an der Notch unter Gehäuse und Flügel (der
+Flügel wird dabei so breit wie die Insel, deren rechte Kante ihn fortsetzt;
+links eine konkave Rundung an die gerade Gehäuseunterkante), in der
+Menüleiste zentriert unter dem Symbol mit konkaven Ansätzen an der Unterkante
+der Leiste. Inhalt:
 
 - CPU, GPU und RAM ≈ nebeneinander mit großem Wert und schmalem Balken,
 - Upload und Download in einer ruhigen Leiste darunter (Leserichtung wie in
@@ -85,11 +92,20 @@ beschrifteten Werte und vollständigen Netzwerkeinheiten.
   neben die Notch; der Flügel verdeckt sie dann. Öffentliche APIs melden
   diese Belegung nicht. In dem Fall in den Details „Notch“ ausschalten: Das
   normale Menüleistensymbol wird vom System platziert und überdeckt nichts.
-- Die Form der Gehäuserundung ist nicht abfragbar. Der Flügel nutzt die
-  öffentlichen Werte (`auxiliaryTopLeftArea`, `auxiliaryTopRightArea`,
-  `safeAreaInsets.top`) und deckt die untere rechte Rundung durch die
-  Überlappung ab, statt einen Radius anzunehmen. Die linke Rundung der Insel
+- Öffentlich meldet macOS das Gehäuse nur in ganzen Punkten
+  (`auxiliaryTopLeftArea`, `auxiliaryTopRightArea`, `safeAreaInsets.top`,
+  hier 32 pt). Die tatsächliche Unterkante liegt bei 32,17 pt (Pixelzeile 56
+  des Panels). tinyStats liest sie aus AppKits eigenem Displayumriss
+  (`bezelPath` von NSScreen, nicht dokumentiert, nur gelesen) und nutzt ihn
+  nur, wenn er auf einen Punkt genau mit den öffentlichen Werten
+  übereinstimmt; sonst gilt die Safe Area. Die untere rechte Gehäuserundung
+  (hier 14,6 pt) liegt innerhalb der Überlappung. Die linke Rundung der Insel
   setzt 18 pt neben der linken Gehäuseecke an der geraden Unterkante an.
+- In skalierten Auflösungen (etwa „1470 × 956“ auf dem 2560 × 1664-Panel)
+  rechnet macOS das Bild auf das Panel herunter. Die gezeichnete Unterkante
+  des Flügels liegt dann an derselben Stelle wie die Gehäusekante, bleibt
+  aber weicher (Übergang über etwa zwei Panelpixel), während die Gehäusekante
+  hart ist.
 - Automatisch ausgeblendete Menüleisten, Vollbild-Spaces und der Wechsel
   zwischen mehreren echten Displays sind nicht live geprüft; die Panels
   erzwingen keine Anzeige über Vollbild-Apps.
@@ -103,8 +119,10 @@ git diff --check
 ```
 
 Die Checks verwenden echte lokale CPU-/RAM-/Netzwerkproben (mindestens ein
-`en`-Interface nötig) und prüfen außerdem Formatierung, Flügel- und
-Inselgeometrie mit den echten Notch-Werten dieses Macs, die beiden
+`en`-Interface nötig) und prüfen außerdem Formatierung, die
+Menüleisten-Grafik in Pixeln (drei Balken ohne Buchstaben, fehlend gegenüber
+0 %), Flügel- und Inselgeometrie mit den echten Notch-Werten dieses Macs, die
+Unterkante aus dem Displayumriss samt Rückfall auf die Safe Area, die beiden
 Formvorgaben (konkave Ecke oben rechts, gerade Unterkante in die Notch),
 Federverlauf inklusive Umkehr, festes Layout bei Wertänderungen,
 Event-Routing (Escape, ⌘Q, Klick innen/außen/auf die Quelle) und native

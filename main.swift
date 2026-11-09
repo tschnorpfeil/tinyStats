@@ -186,11 +186,24 @@ enum Format {
 
 // MARK: - Menu bar indicators
 
-// Fixed order: CPU, GPU, RAM; network rates are bytes per second.
+// Three bars in fixed order, left to right: CPU, GPU, RAM. No letters: the
+// position names the bar; tooltip and VoiceOver carry the full names. Network
+// rates are bytes per second, upload above download.
 enum MenuBarIndicators {
-    static let size = NSSize(width: 88, height: 22)
-    static let labelFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+    static let barWidth: CGFloat = 4
+    static let barGap: CGFloat = 3
+    /// Between the bars and the rates, wider than `barGap` so the arrows read as their own group.
+    static let groupGap: CGFloat = 6
+    /// Arrow plus right-aligned rate; the widest rate ("999M") keeps 2 pt from its arrow.
+    static let rateColumn: CGFloat = 36
+    static let barsWidth = 3 * barWidth + 2 * barGap
+    static let size = NSSize(width: barsWidth + groupGap + rateColumn, height: 22)
     static let rateFont = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium)
+
+    /// Track of bar 0 (CPU), 1 (GPU) or 2 (RAM).
+    static func track(_ index: Int) -> NSRect {
+        NSRect(x: CGFloat(index) * (barWidth + barGap), y: 4, width: barWidth, height: 14)
+    }
 
     static func compactRate(_ bytes: Double?, locale: Locale = .current) -> String {
         guard let bytes, bytes.isFinite, bytes >= 0 else { return "—" }
@@ -221,14 +234,8 @@ enum MenuBarIndicators {
         let values = [cpu, gpu, ram]
         let rows = rateRows(net)
         let image = NSImage(size: size, flipped: false) { _ in
-            let labels = ["C", "G", "R"]
-            let labelAttributes: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: NSColor.black]
             for (index, value) in values.enumerated() {
-                let columnX = CGFloat(index) * 17
-                let label = labels[index] as NSString
-                let labelWidth = label.size(withAttributes: labelAttributes).width
-                label.draw(at: NSPoint(x: columnX + (9 - labelWidth) / 2, y: 4), withAttributes: labelAttributes)
-                let track = NSRect(x: columnX + 10, y: 4, width: 5, height: 14)
+                let track = track(index)
                 if let value, value.isFinite {
                     NSColor.black.withAlphaComponent(0.25).setFill()
                     NSBezierPath(roundedRect: track, xRadius: 1.5, yRadius: 1.5).fill()
@@ -246,9 +253,9 @@ enum MenuBarIndicators {
             }
             let attributes: [NSAttributedString.Key: Any] = [.font: rateFont, .foregroundColor: NSColor.black]
             for (arrow, text, y) in rows {
-                (arrow as NSString).draw(at: NSPoint(x: 52, y: y), withAttributes: attributes)
+                (arrow as NSString).draw(at: NSPoint(x: barsWidth + groupGap, y: y), withAttributes: attributes)
                 let width = (text as NSString).size(withAttributes: attributes).width
-                (text as NSString).draw(at: NSPoint(x: 88 - width, y: y), withAttributes: attributes)
+                (text as NSString).draw(at: NSPoint(x: size.width - width, y: y), withAttributes: attributes)
             }
             return true
         }
@@ -258,6 +265,55 @@ enum MenuBarIndicators {
 }
 
 // MARK: - Silhouette
+
+/// Lower edge of the camera housing as AppKit outlines the display. The public
+/// values are whole points (safe area 32 pt on this Mac); the outline puts the
+/// housing's lower edge at 32.17 pt, the panel's 56th pixel row. The outline
+/// comes from NSScreen's undocumented `bezelPath`, is only read, and is used
+/// only when it agrees with the public values to within a point.
+enum HousingOutline {
+    static func outline(of screen: NSScreen) -> NSBezierPath? {
+        let selector = NSSelectorFromString("bezelPath")
+        guard let method = class_getInstanceMethod(NSScreen.self, selector),
+              let types = method_getTypeEncoding(method), String(cString: types).hasPrefix("@") else { return nil }
+        return screen.perform(selector)?.takeUnretainedValue() as? NSBezierPath
+    }
+
+    /// Lowest outline vertex within the housing's span, in global coordinates;
+    /// nil without a housing in the outline or when it disagrees with `notch`.
+    /// Vertices lie on the outline; control points and the few hundredths of a
+    /// point that continuous corners overshoot between vertices do not count.
+    static func bottom(in outline: NSBezierPath, screenFrame: NSRect, notch: NSRect) -> CGFloat? {
+        func matches(_ rect: NSRect) -> Bool {
+            let b = outline.bounds
+            return abs(b.minX - rect.minX) <= 1 && abs(b.minY - rect.minY) <= 1
+                && abs(b.maxX - rect.maxX) <= 1 && abs(b.maxY - rect.maxY) <= 1
+        }
+        let offset: NSPoint
+        if matches(screenFrame) {
+            offset = .zero
+        } else if matches(NSRect(origin: .zero, size: screenFrame.size)) {
+            offset = screenFrame.origin
+        } else {
+            return nil
+        }
+        var points = [NSPoint](repeating: .zero, count: 3)
+        var lowest = CGFloat.infinity
+        for index in 0..<outline.elementCount {
+            let vertex: NSPoint
+            switch outline.element(at: index, associatedPoints: &points) {
+            case .moveTo, .lineTo: vertex = points[0]
+            case .curveTo, .cubicCurveTo: vertex = points[2]
+            case .quadraticCurveTo: vertex = points[1]
+            default: continue
+            }
+            let x = vertex.x + offset.x, y = vertex.y + offset.y
+            if x > notch.minX + 1, x < notch.maxX - 1, y > notch.minY - 1 { lowest = min(lowest, y) }
+        }
+        guard lowest.isFinite, abs(lowest - notch.minY) <= 1 else { return nil }
+        return lowest
+    }
+}
 
 /// Black wing flush right of the camera housing. Global coordinates unless
 /// noted. The window also reaches `notchOverlap` behind the housing, so the
@@ -271,66 +327,88 @@ struct NotchWing: Equatable {
     static let bottomRadius: CGFloat = 10
     private static let tolerance: CGFloat = 0.5
 
-    /// Housing bounding box: between both auxiliary areas, safe-area height.
+    /// Housing bounding box: between both auxiliary areas, from the top of the
+    /// screen down to the housing's lower edge (outline, else safe area).
     let notch: NSRect
 
+    /// Right edge of the compact wing.
     var wingMaxX: CGFloat { notch.maxX + Self.wingWidth }
 
+    /// Right edge while the details hang below: the wing widens with the body.
+    var openMaxX: CGFloat { max(wingMaxX, notch.minX + IslandLayout.notchInset + IslandLayout.notchWidth) }
+
+    /// Right edge for `spread` 0 (compact) to 1 (open).
+    func maxX(spread: CGFloat) -> CGFloat { wingMaxX + (openMaxX - wingMaxX) * min(1, max(0, spread)) }
+
     /// Window frame on whole points (AppKit rounds window origins; the housing
-    /// edge may sit on a half point): overlap strip, wing and top flare.
-    var frame: NSRect {
+    /// edges may sit between points): overlap strip, wing and top flare, from
+    /// the point row holding the housing's lower edge up to the top.
+    func frame(open: Bool) -> NSRect {
         let minX = (notch.maxX - Self.notchOverlap).rounded(.down)
-        let maxX = (wingMaxX + Self.topFlare).rounded(.up)
-        return NSRect(x: minX, y: notch.minY, width: maxX - minX, height: notch.height)
+        let maxX = ((open ? openMaxX : wingMaxX) + Self.topFlare).rounded(.up)
+        let minY = notch.minY.rounded(.down)
+        return NSRect(x: minX, y: minY, width: maxX - minX, height: notch.maxY - minY)
     }
 
-    /// Housing edge and wing edge in window coordinates (sub-point exact).
+    var frame: NSRect { frame(open: false) }
+    var openFrame: NSRect { frame(open: true) }
+
+    /// Housing edge, compact wing edge and lower edge in window coordinates (sub-point exact).
     var junctionX: CGFloat { notch.maxX - frame.minX }
     var edgeX: CGFloat { wingMaxX - frame.minX }
+    var bottomY: CGFloat { notch.minY - frame.minY }
 
     /// Visible wing in window coordinates; only this part opens the details.
-    var hitRect: NSRect { NSRect(x: junctionX, y: 0, width: Self.wingWidth, height: notch.height) }
+    var hitRect: NSRect { NSRect(x: junctionX, y: bottomY, width: Self.wingWidth, height: notch.height) }
 
     var indicatorRect: NSRect {
         NSRect(x: junctionX + Self.indicatorInset,
-               y: ((notch.height - MenuBarIndicators.size.height) / 2).rounded(),
+               y: (bottomY + (notch.height - MenuBarIndicators.size.height) / 2).rounded(),
                width: MenuBarIndicators.size.width, height: MenuBarIndicators.size.height)
     }
 
     /// `leftArea`/`rightArea` are `auxiliaryTopLeftArea`/`auxiliaryTopRightArea`,
-    /// `topInset` is `safeAreaInsets.top`. Nil without a usable housing.
-    static func make(screenFrame: NSRect, leftArea: NSRect?, rightArea: NSRect?, topInset: CGFloat) -> NotchWing? {
+    /// `topInset` is `safeAreaInsets.top`, `outline` refines the lower edge.
+    /// Nil without a usable housing.
+    static func make(screenFrame: NSRect, leftArea: NSRect?, rightArea: NSRect?, topInset: CGFloat,
+                     outline: NSBezierPath? = nil) -> NotchWing? {
         guard let leftArea, let rightArea, !leftArea.isEmpty, !rightArea.isEmpty, !screenFrame.isEmpty,
               topInset.isFinite, topInset >= MenuBarIndicators.size.height,
               abs(leftArea.maxY - screenFrame.maxY) <= tolerance,
               abs(rightArea.maxY - screenFrame.maxY) <= tolerance,
               leftArea.minX >= screenFrame.minX - tolerance,
               rightArea.maxX <= screenFrame.maxX + tolerance,
-              rightArea.minX - leftArea.maxX >= 2 * notchOverlap,
-              rightArea.width >= wingWidth + topFlare else { return nil }
-        return NotchWing(notch: NSRect(x: leftArea.maxX, y: screenFrame.maxY - topInset,
-                                       width: rightArea.minX - leftArea.maxX, height: topInset))
+              rightArea.minX - leftArea.maxX >= 2 * notchOverlap else { return nil }
+        var notch = NSRect(x: leftArea.maxX, y: screenFrame.maxY - topInset,
+                           width: rightArea.minX - leftArea.maxX, height: topInset)
+        if let outline, let bottom = HousingOutline.bottom(in: outline, screenFrame: screenFrame, notch: notch) {
+            notch = NSRect(x: notch.minX, y: bottom, width: notch.width, height: screenFrame.maxY - bottom)
+        }
+        let wing = NotchWing(notch: notch)
+        return wing.openFrame.maxX <= rightArea.maxX + tolerance ? wing : nil
     }
 
     /// Window coordinates. Concave flare where the right edge meets the top of
-    /// the display, straight lower edge continuing the housing, convex free
-    /// lower-right corner that squares off (`attach` → 1) while details hang below.
-    func path(attach: CGFloat) -> NSBezierPath {
-        let height = notch.height
-        let edge = edgeX
+    /// the display, straight lower edge on the housing's lower edge, convex free
+    /// lower-right corner that squares off (`attach` → 1) while details hang
+    /// below; `spread` widens the wing to the body's right edge.
+    func path(attach: CGFloat, spread: CGFloat = 0) -> NSBezierPath {
+        let top = notch.maxY - frame.minY
+        let bottom = bottomY
+        let edge = maxX(spread: spread) - frame.minX
         let flare = Self.topFlare
         let radius = Self.bottomRadius * (1 - min(1, max(0, attach)))
         let path = NSBezierPath()
-        path.move(to: NSPoint(x: 0, y: height))
-        path.line(to: NSPoint(x: edge + flare, y: height))
-        path.appendArc(withCenter: NSPoint(x: edge + flare, y: height - flare), radius: flare,
+        path.move(to: NSPoint(x: 0, y: top))
+        path.line(to: NSPoint(x: edge + flare, y: top))
+        path.appendArc(withCenter: NSPoint(x: edge + flare, y: top - flare), radius: flare,
                        startAngle: 90, endAngle: 180, clockwise: false)
-        path.line(to: NSPoint(x: edge, y: radius))
+        path.line(to: NSPoint(x: edge, y: bottom + radius))
         if radius > 0.01 {
-            path.appendArc(withCenter: NSPoint(x: edge - radius, y: radius), radius: radius,
+            path.appendArc(withCenter: NSPoint(x: edge - radius, y: bottom + radius), radius: radius,
                            startAngle: 0, endAngle: 270, clockwise: true)
         }
-        path.line(to: NSPoint(x: 0, y: 0))
+        path.line(to: NSPoint(x: 0, y: bottom))
         path.close()
         return path
     }
@@ -340,6 +418,8 @@ struct NotchWing: Equatable {
 /// coordinates; `path`, `bodyRect` and `finalBodyRect` use window coordinates.
 struct IslandLayout: Equatable {
     static let notchInset: CGFloat = 28
+    /// Body width under the housing; the wing widens to it while open.
+    static let notchWidth: CGFloat = 255
     static let fillet: CGFloat = 10
     static let cornerRadius: CGFloat = 22
     static let menuBarWidth: CGFloat = 272
@@ -355,14 +435,16 @@ struct IslandLayout: Equatable {
     var leftFillet: CGFloat
     var rightFillet: CGFloat
 
-    /// Under housing and wing: the right edge continues the wing; the left edge
-    /// meets the housing's straight lower edge with a concave fillet, well clear
-    /// of the housing's own lower-left corner. With a very narrow housing (large
-    /// text scaling) the body grows further left so the content still fits.
+    /// Under housing and wing: the right edge continues the widening wing; the
+    /// left edge meets the housing's straight lower edge with a concave fillet,
+    /// well clear of the housing's own lower-left corner. The top edge runs on
+    /// the first whole point at or above the housing's lower edge: hidden behind
+    /// housing and wing, overlapping instead of abutting the wing's antialiased
+    /// lower edge (no seam), and the content stays on whole points.
     static func notch(_ wing: NotchWing, height: CGFloat) -> IslandLayout {
-        let left = min(wing.notch.minX + notchInset, wing.wingMaxX - minimumWidth)
-        return IslandLayout(attachY: wing.notch.minY, source: wing.notch.maxX...wing.wingMaxX,
-                            final: left...wing.wingMaxX, height: height, leftFillet: fillet, rightFillet: 0)
+        IslandLayout(attachY: wing.notch.minY.rounded(.up), source: wing.notch.maxX...wing.wingMaxX,
+                     final: (wing.notch.minX + notchInset)...wing.openMaxX, height: height,
+                     leftFillet: fillet, rightFillet: 0)
     }
 
     /// From the menu bar's lower edge, centred under the status item.
@@ -1081,6 +1163,8 @@ final class IslandPresenter: NSObject {
 final class WingView: NSView {
     var wing: NotchWing? { didSet { needsDisplay = true } }
     var attach: CGFloat = 0 { didSet { if attach != oldValue { needsDisplay = true } } }
+    /// 0 compact, 1 as wide as the details hanging below.
+    var spread: CGFloat = 0 { didSet { if spread != oldValue { needsDisplay = true } } }
     var indicator: NSImage? { didSet { needsDisplay = true } }
     var onClick: (() -> Void)?
 
@@ -1096,7 +1180,7 @@ final class WingView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let wing else { return }
         NSColor.black.setFill()
-        wing.path(attach: attach).fill()
+        wing.path(attach: attach, spread: spread).fill()
         guard let indicator, let context = NSGraphicsContext.current else { return }
         let target = wing.indicatorRect
         context.saveGraphicsState()
@@ -1139,9 +1223,49 @@ final class WingPanel: NSPanel {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 
     func place(_ wing: NotchWing) {
-        setFrame(wing.frame, display: false)
-        wingView.frame = NSRect(origin: .zero, size: wing.frame.size)
         wingView.wing = wing
+        follow(attach: 0, spread: 0)
+    }
+
+    /// Tracks the details: the window takes the open width before the wing
+    /// starts to widen and gives it back once the wing is compact again, so
+    /// the closed wing never covers more of the menu bar than it shows.
+    func follow(attach: CGFloat, spread: CGFloat) {
+        guard let wing = wingView.wing else { return }
+        let target = wing.frame(open: spread > 0)
+        if frame != target {
+            setFrame(target, display: false)
+            wingView.frame = NSRect(origin: .zero, size: target.size)
+            wingView.needsDisplay = true
+        }
+        wingView.attach = attach
+        wingView.spread = spread
+    }
+}
+
+// MARK: - Single instance
+
+/// One instance per session. The bundle identifier survived the Systemstatus →
+/// tinyStats rename, so older builds and other copies of the bundle count too.
+enum SingleInstance {
+    static let bundleIdentifier = "local.hsb.systemstatus"
+
+    /// Yields to any instance launched before (or with) this one; when a launch
+    /// date is unknown it yields as well, preferring no duplicate over a second icon.
+    static func shouldYield(ownLaunch: Date?, otherLaunches: [Date?]) -> Bool {
+        otherLaunches.contains { other in
+            guard let other, let ownLaunch else { return true }
+            return other <= ownLaunch
+        }
+    }
+
+    /// PID of the running instance this launch should give way to, if any.
+    static func runningInstance() -> pid_t? {
+        let own = NSRunningApplication.current
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+            .filter { $0.processIdentifier != own.processIdentifier && !$0.isTerminated }
+        guard shouldYield(ownLaunch: own.launchDate, otherLaunches: others.map(\.launchDate)) else { return nil }
+        return others.first?.processIdentifier
     }
 }
 
@@ -1171,7 +1295,9 @@ final class App: NSObject, NSApplicationDelegate {
         wingPanel.wingView.setAccessibilityLabel("tinyStats")
         wingPanel.wingView.onClick = { [weak self] in self?.toggleDetails() }
         presenter.onProgress = { [weak self] progress in
-            self?.wingPanel.wingView.attach = Choreography.attach(progress)
+            guard let self, self.wing != nil else { return }
+            // Same widening as the body's right edge, so both edges stay one line.
+            self.wingPanel.follow(attach: Choreography.attach(progress), spread: Choreography.widthProgress(progress))
         }
         presenter.onPresentedChange = { [weak self] shown in
             // After the button's own mouse-up handling, which resets its highlight.
@@ -1192,7 +1318,8 @@ final class App: NSObject, NSApplicationDelegate {
     private func updatePlacement() {
         let available = NSScreen.screens.first.flatMap {
             NotchWing.make(screenFrame: $0.frame, leftArea: $0.auxiliaryTopLeftArea,
-                           rightArea: $0.auxiliaryTopRightArea, topInset: $0.safeAreaInsets.top)
+                           rightArea: $0.auxiliaryTopRightArea, topInset: $0.safeAreaInsets.top,
+                           outline: HousingOutline.outline(of: $0))
         }
         let enabled = UserDefaults.standard.bool(forKey: Self.notchDefaultsKey)
         content.setNotchOption(available: available != nil, enabled: enabled)
@@ -1226,7 +1353,7 @@ final class App: NSObject, NSApplicationDelegate {
 
     /// Island geometry for the active placement and the clickable source rect.
     private func currentLayout() -> (IslandLayout, NSRect)? {
-        if let wing { return (.notch(wing, height: IslandContentView.height), wing.frame) }
+        if let wing { return (.notch(wing, height: IslandContentView.height), wing.openFrame) }
         guard let button = status.button, let window = button.window, let screen = window.screen else { return nil }
         let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
         return (.menuBar(anchor: anchor, screen: screen.frame, visibleTop: screen.visibleFrame.maxY,
@@ -1245,6 +1372,10 @@ final class App: NSObject, NSApplicationDelegate {
 }
 
 let app = NSApplication.shared
+if let running = SingleInstance.runningInstance() {
+    FileHandle.standardError.write(Data("tinyStats läuft bereits (PID \(running)).\n".utf8))
+    exit(0)
+}
 let delegate = App()
 app.delegate = delegate
 app.setActivationPolicy(.accessory)

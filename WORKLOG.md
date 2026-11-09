@@ -239,3 +239,31 @@ Evidence (this session):
 - Live app: the old exact executable /Users/ts/HSB-MenuBar/Systemstatus.app/Contents/MacOS/Systemstatus (PID 18961) was stopped. /Users/ts/HSB-MenuBar/tinyStats.app/Contents/MacOS/tinyStats runs as a single instance and its log is empty. The stale generated bundle Systemstatus.app (ignored build output from 03d0164) was moved to /private/tmp/claude-501/-Users-ts--t3-scratch-2026-11-08-ich-habe-von-einem-lokalen-298c78ca/f1f97544-a6ff-4630-b8ce-2f12a87679de/scratchpad/old-Systemstatus.app, so it can no longer start a duplicate instance. It can be rebuilt from git. The wing window is on screen at CG X 788, Y 0, 148×32, layer 25 (matches the computed frame).
 
 Limitations: this session has no CUA tool, and `screencapture` is denied (no Screen Recording permission). So there is no live screenshot, and no live mouse test of wing or status item clicks, hover or fallback highlight. The visual proof is offscreen plus window-server geometry plus runtime timing. Whether transparent window regions pass clicks through is unverified, so treat them as captured: they close the island. The fallback composite's button position is estimated from the screenshot. The housing contour is simulated.
+
+Single instance (follow-up request): main.swift now exits before creating a status item when another process with bundle id local.hsb.systemstatus is running. The earlier launch wins; if launch dates are unknown, the new launch yields, so duplicates are avoided. This is checked against the identifier that build.sh writes. Live on this Mac with PID 39220 running: a direct second exec printed "tinyStats läuft bereits (PID 39220)." and exited 0; `open -n` and plain `open` left exactly one instance. Launcher files (install.sh, bin/tinystats, Tests/install.sh) belong to the parent and were not touched.
+
+### Follow-up 2026-11-09: flush lower edge, letter-free indicator
+
+Lower edge (user: "Unterkante von tinystats nicht perfekt bündig mit Unterkante notch"):
+- Measured on this Mac (MacBook Air 13.6", 2560×1664 panel, mode 1470×956 at 2x, so 1 pt ≈ 1.741 panel px): safe area 32 pt, auxiliary areas 32 pt high, menu bar 33 pt.
+- AppKit's own display outline (`-[NSScreen bezelPath]`, undocumented) puts the housing's straight lower edge at y 923.834, i.e. 32.166 pt below the top. That is panel row 56 (housing 312 × 56 panel px). Lower corner radius 14.6 pt; top shoulders are about 6.9 pt concave.
+- The public values are whole points, so the wing ended 0.166 pt (0.29 panel px) above the housing.
+- Not the cause: shadow (hasShadow false), path inset, and window position (CG bounds 788/0 148×32 matched the code).
+- Panel simulation (box filter 2940→2560 on real renders), last wing row below the bar colour 0.84: before, row 55 at brightness 0.25 next to black housing; now, row 55 at 0.17 and row 56 at 0.68, so the edge centroid sits on row 56.
+- Fix: the wing reads the outline's lowest vertex inside the housing span. It is used only within 1 pt of the safe area and when the outline matches the screen frame (global or screen-local); otherwise the safe area applies.
+- Wing frame is 788/923 120×33, with the lower edge 0.834 pt above the window bottom.
+- The island keeps its top on the first whole point above the housing edge (924). It is hidden behind the housing and the wing and overlaps the wing's antialiased edge instead of abutting it. Abutting fractional AA edges from two windows would leave a ~22 % seam row. Content stays on whole points.
+- The two windows now overlap by 1 pt below the visible wing edge. The routing is unchanged; the test asserts the overlap stays under half a point of visible wing.
+
+Indicator without letters (user: "C,G,R weg lassen?"):
+- Three 4 pt bars with 3 pt gaps, then a 6 pt gap, then the unchanged 36 pt rate column. Image 60×22 (was 88), status item 68 (was 96), wing 76 (was 104), closed wing window 120 wide (was 148).
+- Upload stays on top, download below. nil (dash) vs 0 (empty track) is checked in pixels; full names stay in tooltip and VoiceOver.
+- The details still need 255 pt under the housing, which the compact wing no longer reaches. The wing window takes the open width (148) as the details start and returns to 120 once they are gone. The wing's right edge follows the body's right edge with the same `widthProgress`, so the open silhouette is the approved one (island 663/770 266×154 unchanged).
+
+Evidence:
+- Checks: 10 PASS blocks, including the outline parser (vertices only, local/global, rejects), the raster lower edge (coverage sum within 0.05 pt of the outline), three bar runs of 8 px each, and the shared right edge for p 0…1.03.
+- Offscreen renders (real views, real outline as housing): scratchpad render/out, notch-*, zoom-*, motion-*, junction-lower-edge-panel-before-after.png.
+- Live (this display, real panels, window-server bounds via CGWindowList):
+  - App PID 50298: wing 788/0 120×33.
+  - Probe with the same panels: closed 120×33, open wing 148×33 plus island 663/32 266×154, closed again 120×33. 37 ticks; right-edge mismatch 1e-13 pt.
+- No live pixel capture: CGWindowListCreateImage is obsoleted in macOS 15+, and Screen Recording is denied.
