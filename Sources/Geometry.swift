@@ -136,22 +136,19 @@ struct NotchWing: Equatable {
     /// lower-right corner that squares off (`attach` → 1) while details hang
     /// below. Its width stays fixed throughout the transition.
     func path(attach: CGFloat) -> NSBezierPath {
-        let top = notch.maxY - frame.minY
-        let bottom = bottomY
-        let edge = edgeX
-        let flare = Self.topFlare
+        let top = notch.maxY - frame.minY, edge = edgeX, flare = Self.topFlare
         let radius = Self.bottomRadius * (1 - min(1, max(0, attach)))
         let path = NSBezierPath()
         path.move(to: NSPoint(x: 0, y: top))
         path.line(to: NSPoint(x: edge + flare, y: top))
         path.appendArc(withCenter: NSPoint(x: edge + flare, y: top - flare), radius: flare,
                        startAngle: 90, endAngle: 180, clockwise: false)
-        path.line(to: NSPoint(x: edge, y: bottom + radius))
+        path.line(to: NSPoint(x: edge, y: bottomY + radius))
         if radius > 0.01 {
-            path.appendArc(withCenter: NSPoint(x: edge - radius, y: bottom + radius), radius: radius,
+            path.appendArc(withCenter: NSPoint(x: edge - radius, y: bottomY + radius), radius: radius,
                            startAngle: 0, endAngle: 270, clockwise: true)
         }
-        path.line(to: NSPoint(x: 0, y: bottom))
+        path.line(to: NSPoint(x: 0, y: bottomY))
         path.close()
         return path
     }
@@ -255,11 +252,9 @@ struct IslandLayout: Equatable {
         // Fill the housing's lower-left rounded cutout as the island reaches
         // its left edge. The cap stays strictly inside the housing bounds;
         // the wing's visible width and the content position do not change.
-        if housingCapHeight > 0 {
-            let capRight = min(source.lowerBound, s.maxX) - frame.minX
-            if capRight > left {
-                path.appendRect(NSRect(x: left, y: top, width: capRight - left, height: housingCapHeight))
-            }
+        let capRight = min(source.lowerBound, s.maxX) - frame.minX
+        if housingCapHeight > 0, capRight > left {
+            path.appendRect(NSRect(x: left, y: top, width: capRight - left, height: housingCapHeight))
         }
         return path
     }

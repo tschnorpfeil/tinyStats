@@ -57,11 +57,11 @@ final class App: NSObject, NSApplicationDelegate {
         wingPanel.wingView.setAccessibilityLabel("tinyStats")
         wingPanel.wingView.onClick = { [weak self] in self?.toggleDetails() }
         presenter.onProgress = { [weak self] progress in
-            guard let self, self.wing != nil else { return }
+            guard let self else { return }
             // Only join the lower corner; the compact wing never changes width.
             // A card floating under the status item leaves the wing alone.
-            let attached = self.presenter.view.layout?.isFloating == false
-            self.wingPanel.wingView.attach = attached ? Choreography.attach(progress) : 0
+            let attached = presenter.view.layout?.isFloating == false
+            wingPanel.wingView.attach = attached ? Choreography.attach(progress) : 0
         }
         presenter.onPresentedChange = { [weak self] shown in
             let highlighted = shown && self?.presenter.view.layout?.isFloating == true
@@ -131,11 +131,11 @@ final class App: NSObject, NSApplicationDelegate {
         let image = MenuBarIndicators.image(bars: layout.top.map { $0.fraction(lastSample) },
                                             readout: layout.menuBar.readout(lastSample))
         status.button?.image = image
-        status.button?.toolTip = summary
-        status.button?.setAccessibilityValue(summary)
         wingPanel.wingView.indicator = image
-        wingPanel.wingView.toolTip = summary
-        wingPanel.wingView.setAccessibilityValue(summary)
+        for view in [status.button, wingPanel.wingView] as [NSView?] {
+            view?.toolTip = summary
+            view?.setAccessibilityValue(summary)
+        }
     }
 
     /// Island geometry for the clicked source and its clickable rect. The status

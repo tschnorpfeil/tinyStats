@@ -108,7 +108,7 @@ final class IslandPresenter: NSObject {
     private var monitors: [Any] = []
     private var observers: [NSObjectProtocol] = []
     private var fadeToken = 0
-    private(set) var sourceRect = NSRect.zero
+    private var sourceRect = NSRect.zero
     var onProgress: ((CGFloat) -> Void)?
     var onPresentedChange: ((Bool) -> Void)?
     var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
@@ -145,10 +145,7 @@ final class IslandPresenter: NSObject {
             apply(1)
             fade(to: 1, completion: nil)
         } else {
-            fadeToken += 1
-            panel.alphaValue = 1
-            spring.retarget(1, Spring.opening)
-            run()
+            animate(to: 1, Spring.opening)
         }
     }
 
@@ -165,10 +162,7 @@ final class IslandPresenter: NSObject {
         if reduceMotion() {
             fade(to: 0) { [weak self] in self?.finishClose() }
         } else {
-            fadeToken += 1
-            panel.alphaValue = 1
-            spring.retarget(0, Spring.closing)
-            run()
+            animate(to: 0, Spring.closing)
         }
     }
 
@@ -187,7 +181,11 @@ final class IslandPresenter: NSObject {
         onProgress?(progress)
     }
 
-    private func run() {
+    /// Cancels a pending fade and lets the spring carry the shape to `target`.
+    private func animate(to target: Double, _ parameters: Spring.Parameters) {
+        fadeToken += 1
+        panel.alphaValue = 1
+        spring.retarget(target, parameters)
         if link == nil {
             let link = view.displayLink(target: self, selector: #selector(tick(_:)))
             link.isPaused = true
@@ -239,13 +237,9 @@ final class IslandPresenter: NSObject {
         return inSource ? .pass : .close
     }
 
-    /// The local monitor's handler; returning nil swallows the event.
+    /// The local monitor's handler, installed as is; returning nil swallows the event.
     private(set) lazy var localHandler: (NSEvent) -> NSEvent? = { [weak self] event in
         guard let self else { return event }
-        return self.handleLocal(event)
-    }
-
-    func handleLocal(_ event: NSEvent) -> NSEvent? {
         let key = event.type == .keyDown
         let inPanel = event.window === panel
         switch Self.route(keyCode: key ? event.keyCode : nil, command: event.modifierFlags.contains(.command),
@@ -259,21 +253,17 @@ final class IslandPresenter: NSObject {
         }
     }
 
-    func handleOutside(at point: NSPoint) {
-        if Self.route(keyCode: nil, command: false, characters: nil, inPanel: false, insideShape: false,
-                      inSource: sourceRect.contains(point)) == .close { close() }
-    }
-
     private func installMonitors() {
         removeMonitors()
-        if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown],
-                                                        handler: localHandler) {
-            monitors.append(local)
-        }
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown],
-                                                          handler: { [weak self] _ in self?.handleOutside(at: NSEvent.mouseLocation) }) {
-            monitors.append(global)
-        }
+        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        monitors = [
+            NSEvent.addLocalMonitorForEvents(matching: clicks.union(.keyDown), handler: localHandler),
+            // Clicks in other apps are always outside the panel; only the source keeps them.
+            NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] _ in
+                guard let self, !sourceRect.contains(NSEvent.mouseLocation) else { return }
+                close()
+            },
+        ].compactMap { $0 }
         let center = NSWorkspace.shared.notificationCenter
         observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil,
                                             queue: .main) { [weak self] note in
@@ -346,6 +336,5 @@ final class WingPanel: OverlayPanel {
         wingView.wing = wing
         wingView.attach = 0
         setFrame(wing.frame, display: false)
-        wingView.frame = NSRect(origin: .zero, size: wing.frame.size)
     }
 }
