@@ -146,138 +146,16 @@ final class Metrics {
     }
 }
 
-// MARK: - Popover
+// MARK: - Formatting
 
-final class StatusViewController: NSViewController {
-    private let cpuValue = NSTextField(labelWithString: "—")
-    private let gpuValue = NSTextField(labelWithString: "—")
-    private let ramValue = NSTextField(labelWithString: "—")
-    private let downValue = NSTextField(labelWithString: "—")
-    private let upValue = NSTextField(labelWithString: "—")
-    let notchToggle = NSButton(checkboxWithTitle: "An Notch anzeigen", target: nil, action: nil)
-    private var contentStack: NSStackView?
-    var onQuit: (() -> Void)?
-    var onNotchToggle: ((Bool) -> Void)?
-
-    override func loadView() {
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 280))
-        let title = NSTextField(labelWithString: "Systemstatus")
-        title.font = .systemFont(ofSize: 15, weight: .semibold)
-        title.alignment = .left
-
-        func separator() -> NSView {
-            let line = NSBox()
-            line.boxType = .separator
-            return line
-        }
-
-        func row(_ name: String, symbol: String, value: NSTextField) -> NSView {
-            let icon = NSImageView()
-            icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-            icon.contentTintColor = .secondaryLabelColor
-            icon.translatesAutoresizingMaskIntoConstraints = false
-            let label = NSTextField(labelWithString: name)
-            label.font = .systemFont(ofSize: 13)
-            value.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
-            value.alignment = .right
-            value.setContentCompressionResistancePriority(.required, for: .horizontal)
-            value.setAccessibilityLabel(name)
-            let spacer = NSView()
-            let stack = NSStackView(views: [icon, label, spacer, value])
-            stack.orientation = .horizontal
-            stack.alignment = .centerY
-            stack.spacing = 9
-            NSLayoutConstraint.activate([
-                icon.widthAnchor.constraint(equalToConstant: 16),
-                icon.heightAnchor.constraint(equalToConstant: 16),
-                stack.heightAnchor.constraint(equalToConstant: 26),
-                spacer.widthAnchor.constraint(greaterThanOrEqualToConstant: 12)
-            ])
-            return stack
-        }
-
-        let ramRow = row("RAM ≈", symbol: "memorychip", value: ramValue)
-        ramRow.toolTip = "Geschätzte Belegung: aktive, verdrahtete und komprimierte Speicherseiten. Kein Speicherdruck."
-        let rows = NSStackView(views: [
-            row("CPU", symbol: "cpu", value: cpuValue),
-            row("GPU", symbol: "square.3.layers.3d", value: gpuValue),
-            ramRow,
-            separator(),
-            row("Download", symbol: "arrow.down", value: downValue),
-            row("Upload", symbol: "arrow.up", value: upValue)
-        ])
-        rows.orientation = .vertical
-        rows.alignment = .width
-        rows.spacing = 5
-
-        let note = NSTextField(labelWithString: "RAM ≈ Schätzung")
-        note.font = .systemFont(ofSize: 11)
-        note.textColor = .secondaryLabelColor
-        let quit = NSButton(title: "Beenden", target: self, action: #selector(quitClicked))
-        quit.bezelStyle = .rounded
-        quit.controlSize = .small
-        quit.font = .systemFont(ofSize: 11)
-        quit.keyEquivalent = "q"
-        quit.keyEquivalentModifierMask = .command
-        let footer = NSStackView(views: [note, NSView(), quit])
-        footer.orientation = .horizontal
-        footer.alignment = .centerY
-
-        notchToggle.target = self
-        notchToggle.action = #selector(notchToggleClicked)
-        notchToggle.font = .systemFont(ofSize: 12)
-        notchToggle.isHidden = true
-        let stack = NSStackView(views: [title, rows, separator(), notchToggle, footer])
-        stack.orientation = .vertical
-        stack.alignment = .width
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(stack)
-        NSLayoutConstraint.activate([
-            title.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 16),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -14)
-        ])
-        view = container
-        contentStack = stack
-        updatePreferredSize()
-    }
-
-    private func updatePreferredSize() {
-        guard let contentStack else { return }
-        preferredContentSize = NSSize(width: 300, height: contentStack.fittingSize.height + 30)
-    }
-
-    @objc private func quitClicked() { onQuit?() }
-    @objc private func notchToggleClicked() { onNotchToggle?(notchToggle.state == .on) }
-
-    /// Shows the notch checkbox only while the primary display has a usable notch.
-    func setNotchOption(available: Bool, enabled: Bool) {
-        loadViewIfNeeded()
-        notchToggle.state = enabled ? .on : .off
-        notchToggle.isEnabled = available
-        guard notchToggle.isHidden == available else { return }
-        notchToggle.isHidden = !available
-        updatePreferredSize()
-    }
-
-    func updateMetrics(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?) {
-        loadViewIfNeeded()
-        cpuValue.stringValue = Self.percent(cpu)
-        gpuValue.stringValue = Self.percent(gpu)
-        ramValue.stringValue = Self.percent(ram)
-        downValue.stringValue = Self.formatRate(net?.downloadBytesPerSecond)
-        upValue.stringValue = Self.formatRate(net?.uploadBytesPerSecond)
-    }
-
+/// "—" means missing data or a fresh baseline; 0 is a valid measurement.
+enum Format {
     static func percent(_ fraction: Double?) -> String {
         guard let fraction, fraction.isFinite else { return "—" }
         return "\(Int((min(1, max(0, fraction)) * 100).rounded())) %"
     }
 
-    static func formatRate(_ bps: Double?) -> String {
+    static func rate(_ bps: Double?) -> String {
         guard let bps, bps.isFinite, bps >= 0 else { return "—" }
         let units = ["B/s", "KB/s", "MB/s", "GB/s"]
         var value = bps
@@ -292,6 +170,17 @@ final class StatusViewController: NSViewController {
         formatter.maximumFractionDigits = unit == 0 ? 0 : 1
         let number = formatter.string(from: NSNumber(value: value)) ?? "—"
         return "\(number) \(units[unit])"
+    }
+
+    /// Splits "8,2 KB/s" or "23 %" into number and unit.
+    static func split(_ text: String) -> (number: String, unit: String) {
+        guard let space = text.lastIndex(of: " ") else { return (text, "") }
+        return (String(text[..<space]), String(text[text.index(after: space)...]))
+    }
+
+    static func summary(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?) -> String {
+        "CPU \(percent(cpu)) · GPU \(percent(gpu)) · RAM geschätzt \(percent(ram)) · Upload \(rate(net?.uploadBytesPerSecond)) · Download \(rate(net?.downloadBytesPerSecond))"
+            .replacingOccurrences(of: "—", with: "Nicht verfügbar")
     }
 }
 
@@ -323,10 +212,14 @@ enum MenuBarIndicators {
         return (formatter.string(from: NSNumber(value: value)) ?? "—") + units[index]
     }
 
+    /// Upload on top, download below; each row keeps its own measured rate.
+    static func rateRows(_ net: NetworkRates?) -> [(arrow: String, text: String, y: CGFloat)] {
+        [("↑", compactRate(net?.uploadBytesPerSecond), 11), ("↓", compactRate(net?.downloadBytesPerSecond), 0)]
+    }
+
     static func image(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?) -> NSImage {
         let values = [cpu, gpu, ram]
-        let download = compactRate(net?.downloadBytesPerSecond)
-        let upload = compactRate(net?.uploadBytesPerSecond)
+        let rows = rateRows(net)
         let image = NSImage(size: size, flipped: false) { _ in
             let labels = ["C", "G", "R"]
             let labelAttributes: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: NSColor.black]
@@ -352,7 +245,7 @@ enum MenuBarIndicators {
                 }
             }
             let attributes: [NSAttributedString.Key: Any] = [.font: rateFont, .foregroundColor: NSColor.black]
-            for (arrow, text, y) in [("↓", download, CGFloat(11)), ("↑", upload, CGFloat(0))] {
+            for (arrow, text, y) in rows {
                 (arrow as NSString).draw(at: NSPoint(x: 52, y: y), withAttributes: attributes)
                 let width = (text as NSString).size(withAttributes: attributes).width
                 (text as NSString).draw(at: NSPoint(x: 88 - width, y: y), withAttributes: attributes)
@@ -364,69 +257,850 @@ enum MenuBarIndicators {
     }
 }
 
-// MARK: - Notch overlay
+// MARK: - Silhouette
 
-enum NotchGeometry {
-    static let horizontalPadding: CGFloat = 10
-    static let cornerRadius: CGFloat = 8
-    static let contentSize = MenuBarIndicators.size
-    static let overlayWidth = contentSize.width + 2 * horizontalPadding
+/// Black wing flush right of the camera housing. Global coordinates unless
+/// noted. The window also reaches `notchOverlap` behind the housing, so the
+/// wing's lower edge continues the housing's lower edge through its rounded
+/// corner; that strip is otherwise hidden by the housing itself.
+struct NotchWing: Equatable {
+    static let indicatorInset: CGFloat = 6
+    static let wingWidth: CGFloat = indicatorInset + MenuBarIndicators.size.width + 10
+    static let notchOverlap: CGFloat = 36
+    static let topFlare: CGFloat = 7
+    static let bottomRadius: CGFloat = 10
     private static let tolerance: CGFloat = 0.5
 
-    /// Overlay frame flush with the notch's right edge, in the same global
-    /// coordinates as `screenFrame`. `rightArea` is `NSScreen.auxiliaryTopRightArea`
-    /// and `topInset` is `safeAreaInsets.top`. Returns nil without a notch, when
-    /// the area is not at the top edge of this screen, or when it is too small.
-    /// The area is only unobscured by the notch; other status items may still
-    /// occupy it.
-    static func overlayFrame(screenFrame: NSRect, rightArea: NSRect?, topInset: CGFloat) -> NSRect? {
-        guard let rightArea, !rightArea.isEmpty, !screenFrame.isEmpty,
-              topInset.isFinite, topInset >= contentSize.height,
-              rightArea.width >= overlayWidth,
-              abs(rightArea.maxY - screenFrame.maxY) <= tolerance,
-              rightArea.minX > screenFrame.minX + tolerance,
-              rightArea.maxX <= screenFrame.maxX + tolerance else { return nil }
-        return NSRect(x: rightArea.minX, y: screenFrame.maxY - topInset,
-                      width: overlayWidth, height: topInset)
+    /// Housing bounding box: between both auxiliary areas, safe-area height.
+    let notch: NSRect
+
+    var wingMaxX: CGFloat { notch.maxX + Self.wingWidth }
+
+    /// Window frame on whole points (AppKit rounds window origins; the housing
+    /// edge may sit on a half point): overlap strip, wing and top flare.
+    var frame: NSRect {
+        let minX = (notch.maxX - Self.notchOverlap).rounded(.down)
+        let maxX = (wingMaxX + Self.topFlare).rounded(.up)
+        return NSRect(x: minX, y: notch.minY, width: maxX - minX, height: notch.height)
     }
 
-    /// Straight left edge at the notch; only the two right outer corners are rounded.
-    static func shapePath(in rect: NSRect, radius: CGFloat = cornerRadius) -> NSBezierPath {
-        let r = max(0, min(radius, rect.width / 2, rect.height / 2))
+    /// Housing edge and wing edge in window coordinates (sub-point exact).
+    var junctionX: CGFloat { notch.maxX - frame.minX }
+    var edgeX: CGFloat { wingMaxX - frame.minX }
+
+    /// Visible wing in window coordinates; only this part opens the details.
+    var hitRect: NSRect { NSRect(x: junctionX, y: 0, width: Self.wingWidth, height: notch.height) }
+
+    var indicatorRect: NSRect {
+        NSRect(x: junctionX + Self.indicatorInset,
+               y: ((notch.height - MenuBarIndicators.size.height) / 2).rounded(),
+               width: MenuBarIndicators.size.width, height: MenuBarIndicators.size.height)
+    }
+
+    /// `leftArea`/`rightArea` are `auxiliaryTopLeftArea`/`auxiliaryTopRightArea`,
+    /// `topInset` is `safeAreaInsets.top`. Nil without a usable housing.
+    static func make(screenFrame: NSRect, leftArea: NSRect?, rightArea: NSRect?, topInset: CGFloat) -> NotchWing? {
+        guard let leftArea, let rightArea, !leftArea.isEmpty, !rightArea.isEmpty, !screenFrame.isEmpty,
+              topInset.isFinite, topInset >= MenuBarIndicators.size.height,
+              abs(leftArea.maxY - screenFrame.maxY) <= tolerance,
+              abs(rightArea.maxY - screenFrame.maxY) <= tolerance,
+              leftArea.minX >= screenFrame.minX - tolerance,
+              rightArea.maxX <= screenFrame.maxX + tolerance,
+              rightArea.minX - leftArea.maxX >= 2 * notchOverlap,
+              rightArea.width >= wingWidth + topFlare else { return nil }
+        return NotchWing(notch: NSRect(x: leftArea.maxX, y: screenFrame.maxY - topInset,
+                                       width: rightArea.minX - leftArea.maxX, height: topInset))
+    }
+
+    /// Window coordinates. Concave flare where the right edge meets the top of
+    /// the display, straight lower edge continuing the housing, convex free
+    /// lower-right corner that squares off (`attach` → 1) while details hang below.
+    func path(attach: CGFloat) -> NSBezierPath {
+        let height = notch.height
+        let edge = edgeX
+        let flare = Self.topFlare
+        let radius = Self.bottomRadius * (1 - min(1, max(0, attach)))
         let path = NSBezierPath()
-        path.move(to: NSPoint(x: rect.minX, y: rect.minY))
-        path.line(to: NSPoint(x: rect.maxX - r, y: rect.minY))
-        path.appendArc(withCenter: NSPoint(x: rect.maxX - r, y: rect.minY + r), radius: r, startAngle: 270, endAngle: 360)
-        path.line(to: NSPoint(x: rect.maxX, y: rect.maxY - r))
-        path.appendArc(withCenter: NSPoint(x: rect.maxX - r, y: rect.maxY - r), radius: r, startAngle: 0, endAngle: 90)
-        path.line(to: NSPoint(x: rect.minX, y: rect.maxY))
+        path.move(to: NSPoint(x: 0, y: height))
+        path.line(to: NSPoint(x: edge + flare, y: height))
+        path.appendArc(withCenter: NSPoint(x: edge + flare, y: height - flare), radius: flare,
+                       startAngle: 90, endAngle: 180, clockwise: false)
+        path.line(to: NSPoint(x: edge, y: radius))
+        if radius > 0.01 {
+            path.appendArc(withCenter: NSPoint(x: edge - radius, y: radius), radius: radius,
+                           startAngle: 0, endAngle: 270, clockwise: true)
+        }
+        path.line(to: NSPoint(x: 0, y: 0))
         path.close()
         return path
     }
+}
 
-    static func contentRect(in bounds: NSRect) -> NSRect {
-        NSRect(x: bounds.minX + horizontalPadding,
-               y: bounds.minY + ((bounds.height - contentSize.height) / 2).rounded(),
-               width: contentSize.width, height: contentSize.height)
+/// Where the details hang and how they grow out of their source. Global
+/// coordinates; `path`, `bodyRect` and `finalBodyRect` use window coordinates.
+struct IslandLayout: Equatable {
+    static let notchInset: CGFloat = 28
+    static let fillet: CGFloat = 10
+    static let cornerRadius: CGFloat = 22
+    static let menuBarWidth: CGFloat = 272
+    /// Narrowest width that still fits three columns, the network tray and the footer.
+    static let minimumWidth: CGFloat = 248
+    static let screenMargin: CGFloat = 8
+    static let headroom: CGFloat = 6
+
+    var attachY: CGFloat
+    var source: ClosedRange<CGFloat>
+    var final: ClosedRange<CGFloat>
+    var height: CGFloat
+    var leftFillet: CGFloat
+    var rightFillet: CGFloat
+
+    /// Under housing and wing: the right edge continues the wing; the left edge
+    /// meets the housing's straight lower edge with a concave fillet, well clear
+    /// of the housing's own lower-left corner. With a very narrow housing (large
+    /// text scaling) the body grows further left so the content still fits.
+    static func notch(_ wing: NotchWing, height: CGFloat) -> IslandLayout {
+        let left = min(wing.notch.minX + notchInset, wing.wingMaxX - minimumWidth)
+        return IslandLayout(attachY: wing.notch.minY, source: wing.notch.maxX...wing.wingMaxX,
+                            final: left...wing.wingMaxX, height: height, leftFillet: fillet, rightFillet: 0)
+    }
+
+    /// From the menu bar's lower edge, centred under the status item.
+    static func menuBar(anchor: NSRect, screen: NSRect, visibleTop: CGFloat, height: CGFloat) -> IslandLayout {
+        // The button is shorter than the bar; use the bar edge when the bar is reserved.
+        let barBottom = visibleTop < screen.maxY - 0.5 ? min(anchor.minY, visibleTop) : anchor.minY
+        let low = screen.minX + screenMargin + fillet
+        let high = screen.maxX - screenMargin - fillet
+        let width = min(menuBarWidth, high - low)
+        let minX = min(max((anchor.midX - width / 2).rounded(), low), high - width)
+        let sourceLow = min(max(anchor.minX, low), high)
+        let sourceHigh = max(min(anchor.maxX, high), sourceLow)
+        return IslandLayout(attachY: barBottom, source: sourceLow...sourceHigh, final: minX...(minX + width),
+                            height: height, leftFillet: fillet, rightFillet: fillet)
+    }
+
+    var width: CGFloat { final.upperBound - final.lowerBound }
+
+    /// Window frame on whole points; its top never rises above the attach line.
+    var frame: NSRect {
+        let minX = (min(source.lowerBound, final.lowerBound) - leftFillet).rounded(.down)
+        let maxX = (max(source.upperBound, final.upperBound) + rightFillet).rounded(.up)
+        let top = attachY.rounded(.down)
+        let bottom = (attachY - height - Self.headroom).rounded(.down)
+        return NSRect(x: minX, y: bottom, width: maxX - minX, height: top - bottom)
+    }
+
+    struct Shape: Equatable {
+        var minX: CGFloat, maxX: CGFloat, height: CGFloat
+        var leftFillet: CGFloat, rightFillet: CGFloat, radius: CGFloat
+    }
+
+    func shape(at progress: CGFloat) -> Shape {
+        let grow = Choreography.widthProgress(progress)
+        let minX = source.lowerBound + (final.lowerBound - source.lowerBound) * grow
+        let maxX = source.upperBound + (final.upperBound - source.upperBound) * grow
+        let h = min(height + Self.headroom, max(0, height * progress))
+        let left = min(leftFillet, h / 2), right = min(rightFillet, h / 2)
+        let radius = max(0, min(Self.cornerRadius, (maxX - minX) / 2, h - max(left, right)))
+        return Shape(minX: minX, maxX: maxX, height: h, leftFillet: left, rightFillet: right, radius: radius)
+    }
+
+    /// Body without fillets.
+    func bodyRect(at progress: CGFloat) -> NSRect {
+        let s = shape(at: progress)
+        return NSRect(x: s.minX - frame.minX, y: attachY - frame.minY - s.height,
+                      width: s.maxX - s.minX, height: s.height)
+    }
+
+    var finalBodyRect: NSRect {
+        NSRect(x: final.lowerBound - frame.minX, y: attachY - height - frame.minY, width: width, height: height)
+    }
+
+    func path(at progress: CGFloat) -> NSBezierPath {
+        let s = shape(at: progress)
+        let path = NSBezierPath()
+        guard s.height > 0.01, s.maxX - s.minX > 0.01 else { return path }
+        let left = s.minX - frame.minX, right = s.maxX - frame.minX
+        let top = attachY - frame.minY, bottom = top - s.height
+        path.move(to: NSPoint(x: left - s.leftFillet, y: top))
+        path.line(to: NSPoint(x: right + s.rightFillet, y: top))
+        if s.rightFillet > 0.01 {
+            path.appendArc(withCenter: NSPoint(x: right + s.rightFillet, y: top - s.rightFillet),
+                           radius: s.rightFillet, startAngle: 90, endAngle: 180, clockwise: false)
+        }
+        path.line(to: NSPoint(x: right, y: bottom + s.radius))
+        if s.radius > 0.01 {
+            path.appendArc(withCenter: NSPoint(x: right - s.radius, y: bottom + s.radius),
+                           radius: s.radius, startAngle: 0, endAngle: 270, clockwise: true)
+        }
+        path.line(to: NSPoint(x: left + s.radius, y: bottom))
+        if s.radius > 0.01 {
+            path.appendArc(withCenter: NSPoint(x: left + s.radius, y: bottom + s.radius),
+                           radius: s.radius, startAngle: 270, endAngle: 180, clockwise: true)
+        }
+        path.line(to: NSPoint(x: left, y: top - s.leftFillet))
+        if s.leftFillet > 0.01 {
+            path.appendArc(withCenter: NSPoint(x: left - s.leftFillet, y: top - s.leftFillet),
+                           radius: s.leftFillet, startAngle: 0, endAngle: 90, clockwise: false)
+        }
+        path.close()
+        return path
     }
 }
 
-/// Draws the existing template indicator white on a black notch extension.
-final class NotchOverlayView: NSView {
+// MARK: - Motion
+
+/// Pure functions of the presentation progress (0 closed, 1 open, small
+/// overshoot allowed). Drawing, reversals and render checks share them.
+enum Choreography {
+    /// Width leads height slightly, so the shape first spreads, then drops.
+    static func widthProgress(_ p: CGFloat) -> CGFloat {
+        let t = min(max(p / 0.8, 0), 1)
+        return 1 - (1 - t) * (1 - t)
+    }
+    static func contentAlpha(_ p: CGFloat) -> CGFloat { smoothstep(0.45, 0.92, p) }
+    /// Content settles downward into place while the body opens.
+    static func contentDrop(_ p: CGFloat) -> CGFloat { 8 * (1 - smoothstep(0.3, 1, p)) }
+    /// Squares the wing's lower-right corner as soon as the body hangs below it.
+    static func attach(_ p: CGFloat) -> CGFloat { smoothstep(0, 0.12, p) }
+
+    static func smoothstep(_ a: CGFloat, _ b: CGFloat, _ x: CGFloat) -> CGFloat {
+        let t = min(max((x - a) / (b - a), 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+}
+
+/// Damped spring on the progress. Retargeting keeps value and velocity, so a
+/// reversal continues from wherever the shape is.
+struct Spring {
+    struct Parameters: Equatable {
+        var response: Double
+        var damping: Double
+    }
+    static let opening = Parameters(response: 0.42, damping: 0.8)
+    static let closing = Parameters(response: 0.26, damping: 1)
+
+    private(set) var value: Double = 0
+    private(set) var velocity: Double = 0
+    private(set) var target: Double = 0
+    private(set) var parameters = Spring.closing
+
+    var isSettled: Bool { value == target && velocity == 0 }
+
+    mutating func retarget(_ target: Double, _ parameters: Parameters) {
+        self.target = target
+        self.parameters = parameters
+    }
+
+    mutating func snap(to target: Double) {
+        self.target = target
+        value = target
+        velocity = 0
+    }
+
+    mutating func advance(by interval: Double) {
+        guard interval > 0, !isSettled else { return }
+        let stiffness = pow(2 * Double.pi / parameters.response, 2)
+        let friction = 4 * Double.pi * parameters.damping / parameters.response
+        // A stalled frame slows the motion down instead of making it jump.
+        var remaining = min(interval, 1.0 / 15)
+        while remaining > 0 {
+            let step = min(1.0 / 480, remaining)
+            velocity += (-stiffness * (value - target) - friction * velocity) * step
+            value += velocity * step
+            remaining -= step
+        }
+        if abs(value - target) < 0.0005, abs(velocity) < 0.01 {
+            value = target
+            velocity = 0
+        }
+    }
+}
+
+// MARK: - Details content
+
+enum IslandStyle {
+    static let primary = NSColor(white: 1, alpha: 0.95)
+    static let secondary = NSColor(white: 1, alpha: 0.56)
+    static let tertiary = NSColor(white: 1, alpha: 0.32)
+    static let track = NSColor(white: 1, alpha: 0.17)
+    static let tray = NSColor(white: 1, alpha: 0.075)
+    static let hairline = NSColor(white: 1, alpha: 0.12)
+    static let caption = NSFont.systemFont(ofSize: 10.5, weight: .semibold)
+    static let value = rounded(24, .semibold)
+    static let valueUnit = rounded(13, .semibold)
+    static let rate = rounded(13, .semibold)
+    static let rateUnit = NSFont.systemFont(ofSize: 10.5, weight: .medium)
+    static let footer = NSFont.systemFont(ofSize: 11, weight: .medium)
+
+    /// SF Pro Rounded with tabular digits, so 1 Hz updates do not wobble.
+    static func rounded(_ size: CGFloat, _ weight: NSFont.Weight) -> NSFont {
+        let base = NSFont.systemFont(ofSize: size, weight: weight)
+        let design = base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor
+        let tabular = design.addingAttributes([.featureSettings: [[
+            NSFontDescriptor.FeatureKey.typeIdentifier: kNumberSpacingType,
+            NSFontDescriptor.FeatureKey.selectorIdentifier: kMonospacedNumbersSelector]]])
+        return NSFont(descriptor: tabular, size: size) ?? base
+    }
+
+    static func text(_ string: String, _ font: NSFont, _ color: NSColor, kern: CGFloat = 0) -> NSAttributedString {
+        NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color, .kern: kern])
+    }
+
+    /// Number with a smaller unit on the same baseline; a dim dash when missing.
+    static func measure(_ formatted: String, number: NSFont, unit: NSFont) -> NSAttributedString {
+        let parts = Format.split(formatted)
+        let result = NSMutableAttributedString(attributedString:
+            text(parts.number, number, parts.unit.isEmpty ? secondary : primary))
+        if !parts.unit.isEmpty { result.append(text("\u{2009}" + parts.unit, unit, secondary)) }
+        return result
+    }
+
+    static func drawCentered(_ text: NSAttributedString, x: CGFloat, in bounds: NSRect, alignRight: Bool = false) {
+        let size = text.size()
+        let width = ceil(size.width), height = ceil(size.height)
+        text.draw(in: NSRect(x: alignRight ? x - width : x, y: ((bounds.height - height) / 2).rounded(),
+                             width: width, height: height))
+    }
+}
+
+/// Caption, value and a thin proportional meter for one utilisation metric.
+final class MetricView: NSView {
+    static let height: CGFloat = 50
+    let caption: String
+    var value: Double? { didSet { if value != oldValue { needsDisplay = true } } }
+
+    init(caption: String, name: String) {
+        self.caption = caption
+        super.init(frame: NSRect(x: 0, y: 0, width: 70, height: Self.height))
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel(name)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var isFlipped: Bool { true }
+    override func accessibilityValue() -> Any? { Format.percent(value).replacingOccurrences(of: "—", with: "Nicht verfügbar") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        IslandStyle.text(caption, IslandStyle.caption, IslandStyle.secondary, kern: 0.4).draw(at: NSPoint(x: 0, y: 0))
+        IslandStyle.measure(Format.percent(value), number: IslandStyle.value, unit: IslandStyle.valueUnit)
+            .draw(at: NSPoint(x: -1, y: 12))
+        Self.drawMeter(in: NSRect(x: 0, y: bounds.height - 3, width: bounds.width, height: 3), value: value)
+    }
+
+    /// Solid track for a measurement (empty at 0 %), dotted track when unavailable.
+    static func drawMeter(in rect: NSRect, value: Double?) {
+        let radius = rect.height / 2
+        guard let value, value.isFinite else {
+            IslandStyle.tertiary.setFill()
+            var x = rect.minX
+            while x + rect.height <= rect.maxX + 0.01 {
+                NSBezierPath(ovalIn: NSRect(x: x, y: rect.minY, width: rect.height, height: rect.height)).fill()
+                x += rect.height * 2.5
+            }
+            return
+        }
+        IslandStyle.track.setFill()
+        NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+        let width = rect.width * CGFloat(min(1, max(0, value)))
+        guard width > 0 else { return }
+        IslandStyle.primary.setFill()
+        let fill = NSRect(x: rect.minX, y: rect.minY, width: width, height: rect.height)
+        NSBezierPath(roundedRect: fill, xRadius: min(radius, width / 2), yRadius: min(radius, width / 2)).fill()
+    }
+}
+
+/// Upload and download as one quiet tray. Rates are not normalised to a capacity.
+final class NetworkView: NSView {
+    static let height: CGFloat = 30
+    var rates: NetworkRates? { didSet { needsDisplay = true } }
+    private static let arrow = NSImage.SymbolConfiguration(pointSize: 9.5, weight: .bold)
+        .applying(NSImage.SymbolConfiguration(paletteColors: [IslandStyle.secondary]))
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel("Netzwerk")
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var isFlipped: Bool { true }
+
+    /// Reading order upload, then download, matching the menu bar (upload on top).
+    static func entries(_ rates: NetworkRates?) -> [(symbol: String, name: String, value: Double?)] {
+        [("arrow.up", "Upload", rates?.uploadBytesPerSecond), ("arrow.down", "Download", rates?.downloadBytesPerSecond)]
+    }
+
+    override func accessibilityValue() -> Any? {
+        Self.entries(rates).map { "\($0.name) \(Format.rate($0.value))" }.joined(separator: ", ")
+            .replacingOccurrences(of: "—", with: "nicht verfügbar")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        IslandStyle.tray.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 9, yRadius: 9).fill()
+        IslandStyle.hairline.setFill()
+        NSRect(x: (bounds.midX - 0.5).rounded(), y: 9, width: 1, height: bounds.height - 18).fill()
+        for (index, entry) in Self.entries(rates).enumerated() {
+            let x = CGFloat(index) * bounds.width / 2 + 11
+            if let image = NSImage(systemSymbolName: entry.symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(Self.arrow) {
+                let size = image.size
+                image.draw(in: NSRect(x: x, y: ((bounds.height - size.height) / 2).rounded(),
+                                      width: size.width, height: size.height),
+                           from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            }
+            IslandStyle.drawCentered(IslandStyle.measure(Format.rate(entry.value), number: IslandStyle.rate,
+                                                         unit: IslandStyle.rateUnit), x: x + 14, in: bounds)
+        }
+    }
+}
+
+/// Monochrome switch with its label; an accent colour would break the scheme.
+final class MonoSwitch: NSButton {
+    static let size = NSSize(width: 68, height: 16)
+
+    convenience init(label: String) {
+        self.init(frame: NSRect(origin: .zero, size: Self.size))
+        setButtonType(.switch)
+        title = label
+        isBordered = false
+        focusRingType = .none
+        setAccessibilityRole(.checkBox)
+        setAccessibilityLabel("An Notch anzeigen")
+    }
+
+    override func accessibilityValue() -> Any? { state == .on ? 1 : 0 }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let on = state == .on
+        let track = NSRect(x: bounds.maxX - 22, y: ((bounds.height - 12) / 2).rounded(), width: 22, height: 12)
+        IslandStyle.drawCentered(IslandStyle.text(title, IslandStyle.footer, IslandStyle.secondary),
+                                 x: track.minX - 6, in: bounds, alignRight: true)
+        NSColor(white: 1, alpha: on ? 0.72 : 0.18).setFill()
+        NSBezierPath(roundedRect: track, xRadius: 6, yRadius: 6).fill()
+        (on ? NSColor.black : NSColor(white: 1, alpha: 0.8)).setFill()
+        NSBezierPath(ovalIn: NSRect(x: on ? track.maxX - 10.5 : track.minX + 1.5, y: track.minY + 1.5, width: 9, height: 9)).fill()
+    }
+}
+
+/// Quiet text action that brightens under the pointer.
+final class TextButton: NSButton {
+    private var hovering = false { didSet { needsDisplay = true } }
+    private var area: NSTrackingArea?
+
+    convenience init(label: String) {
+        self.init(frame: .zero)
+        title = label
+        isBordered = false
+        focusRingType = .none
+        setAccessibilityRole(.button)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area { removeTrackingArea(area) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        self.area = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let color = hovering || isHighlighted ? IslandStyle.primary : IslandStyle.secondary
+        IslandStyle.drawCentered(IslandStyle.text(title, IslandStyle.footer, color), x: bounds.maxX, in: bounds, alignRight: true)
+    }
+}
+
+/// Fixed layout: samples update values in place without re-layout, so 1 Hz
+/// updates never disturb a running transition.
+final class IslandContentView: NSView {
+    static let padding: CGFloat = 16
+    static let columnGap: CGFloat = 12
+    static let metricsTop: CGFloat = 14
+    static let networkTop: CGFloat = metricsTop + MetricView.height + 14
+    static let footerTop: CGFloat = networkTop + NetworkView.height + 12
+    static let footerHeight: CGFloat = 16
+    static let height: CGFloat = footerTop + footerHeight + 12
+
+    let cpu = MetricView(caption: "CPU", name: "CPU")
+    let gpu = MetricView(caption: "GPU", name: "GPU")
+    let ram = MetricView(caption: "RAM ≈", name: "RAM geschätzt")
+    let network = NetworkView(frame: .zero)
+    let notchSwitch = MonoSwitch(label: "Notch")
+    let quitButton = TextButton(label: "Beenden")
+    var onQuit: (() -> Void)?
+    var onNotchToggle: ((Bool) -> Void)?
+
+    init(width: CGFloat) {
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: Self.height))
+        wantsLayer = true
+        canDrawSubviewsIntoLayer = true
+        ram.toolTip = "Geschätzte Belegung: aktive, verdrahtete und komprimierte Speicherseiten. Kein Speicherdruck."
+        notchSwitch.target = self
+        notchSwitch.action = #selector(notchToggled)
+        notchSwitch.isHidden = true
+        quitButton.target = self
+        quitButton.action = #selector(quitClicked)
+        quitButton.setAccessibilityLabel("tinyStats beenden")
+        quitButton.toolTip = "tinyStats beenden (⌘Q)"
+        [cpu, gpu, ram, network, notchSwitch, quitButton].forEach(addSubview)
+        layout(width: width)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var isFlipped: Bool { true }
+
+    func layout(width: CGFloat) {
+        setFrameSize(NSSize(width: width, height: Self.height))
+        let inner = width - 2 * Self.padding
+        let column = ((inner - 2 * Self.columnGap) / 3).rounded(.down)
+        for (index, view) in [cpu, gpu, ram].enumerated() {
+            view.frame = NSRect(x: Self.padding + CGFloat(index) * (column + Self.columnGap), y: Self.metricsTop,
+                                width: column, height: MetricView.height)
+        }
+        network.frame = NSRect(x: Self.padding, y: Self.networkTop, width: inner, height: NetworkView.height)
+        quitButton.frame = NSRect(x: width - Self.padding - 60, y: Self.footerTop, width: 60, height: Self.footerHeight)
+        notchSwitch.frame = NSRect(x: quitButton.frame.minX - 14 - MonoSwitch.size.width, y: Self.footerTop,
+                                   width: MonoSwitch.size.width, height: Self.footerHeight)
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.black.setFill()
+        dirtyRect.fill()
+        let mark = NSMutableAttributedString(attributedString: IslandStyle.text("tiny", IslandStyle.footer, IslandStyle.tertiary))
+        mark.append(IslandStyle.text("Stats", NSFont.systemFont(ofSize: 11, weight: .semibold), IslandStyle.secondary))
+        let size = mark.size()
+        mark.draw(in: NSRect(x: Self.padding, y: Self.footerTop + ((Self.footerHeight - ceil(size.height)) / 2).rounded(),
+                             width: ceil(size.width), height: ceil(size.height)))
+    }
+
+    func update(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?) {
+        self.cpu.value = cpu
+        self.gpu.value = gpu
+        self.ram.value = ram
+        network.rates = net
+    }
+
+    /// The switch exists only while the primary display has a usable housing.
+    func setNotchOption(available: Bool, enabled: Bool) {
+        notchSwitch.state = enabled ? .on : .off
+        notchSwitch.isEnabled = available
+        notchSwitch.isHidden = !available
+    }
+
+    @objc private func quitClicked() { onQuit?() }
+    @objc private func notchToggled() { onNotchToggle?(notchSwitch.state == .on) }
+}
+
+// MARK: - Details island
+
+/// Draws the black silhouette for the current progress and reveals the
+/// content inside the body as it opens.
+final class IslandView: NSView {
+    let content: IslandContentView
+    private let clip = NSView()
+    private(set) var layout: IslandLayout?
+    private(set) var progress: CGFloat = 0
+
+    init(content: IslandContentView) {
+        self.content = content
+        super.init(frame: .zero)
+        wantsLayer = true
+        clip.wantsLayer = true
+        clip.clipsToBounds = true
+        clip.autoresizesSubviews = false
+        clip.layer?.masksToBounds = true
+        clip.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        addSubview(clip)
+        clip.addSubview(content)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var isOpaque: Bool { false }
+
+    func configure(_ layout: IslandLayout) {
+        self.layout = layout
+        frame = NSRect(origin: .zero, size: layout.frame.size)
+        content.layout(width: layout.width)
+        setProgress(progress)
+    }
+
+    func setProgress(_ value: CGFloat) {
+        progress = value
+        guard let layout else { return }
+        needsDisplay = true
+        let body = layout.bodyRect(at: value)
+        clip.isHidden = body.height < 1
+        clip.frame = body
+        clip.layer?.cornerRadius = layout.shape(at: value).radius
+        let final = layout.finalBodyRect
+        content.setFrameOrigin(NSPoint(x: final.minX - body.minX,
+                                       y: final.maxY - body.minY - content.frame.height + Choreography.contentDrop(value)))
+        content.alphaValue = Choreography.contentAlpha(value)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let layout else { return }
+        NSColor.black.setFill()
+        layout.path(at: progress).fill()
+    }
+
+    func shapeContains(_ point: NSPoint) -> Bool { layout?.path(at: progress).contains(point) ?? false }
+}
+
+final class IslandPanel: NSPanel {
+    var onCancel: (() -> Void)?
+
+    init() {
+        super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        level = .statusBar
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+        isMovable = false
+        animationBehavior = .none
+        allowsToolTipsWhenApplicationIsInactive = true
+        appearance = NSAppearance(named: .darkAqua)
+        setAccessibilityLabel("tinyStats")
+    }
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+    override func cancelOperation(_ sender: Any?) { onCancel?() }
+}
+
+/// The only details presenter: grows the island out of its source and back,
+/// driven by one spring on the display link. Reversals retarget in flight.
+final class IslandPresenter: NSObject {
+    let view: IslandView
+    let panel = IslandPanel()
+    private(set) var spring = Spring()
+    private(set) var isPresented = false
+    private var link: CADisplayLink?
+    private var lastTick: CFTimeInterval = 0
+    private var monitors: [Any] = []
+    private var observers: [NSObjectProtocol] = []
+    private var fadeToken = 0
+    private(set) var sourceRect = NSRect.zero
+    var onProgress: ((CGFloat) -> Void)?
+    var onPresentedChange: ((Bool) -> Void)?
+    var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    init(content: IslandContentView) {
+        view = IslandView(content: content)
+        super.init()
+        panel.contentView = view
+        panel.onCancel = { [weak self] in self?.close() }
+    }
+
+    /// `source` is the clickable origin in screen coordinates; clicks there
+    /// belong to its own toggle and never count as outside clicks.
+    func open(layout: IslandLayout, source: NSRect) {
+        guard !isPresented else { return }
+        isPresented = true
+        sourceRect = source
+        let still = reduceMotion()
+        if !panel.isVisible {
+            // A reversal keeps the geometry already in flight.
+            view.configure(layout)
+            panel.setFrame(layout.frame, display: false)
+            spring.snap(to: 0)
+            apply(0)
+            panel.alphaValue = still ? 0 : 1
+        }
+        panel.ignoresMouseEvents = false
+        panel.makeKeyAndOrderFront(nil)
+        installMonitors()
+        onPresentedChange?(true)
+        if still {
+            spring.snap(to: 1)
+            apply(1)
+            fade(to: 1, completion: nil)
+        } else {
+            fadeToken += 1
+            panel.alphaValue = 1
+            spring.retarget(1, Spring.opening)
+            run()
+        }
+    }
+
+    func close(animated: Bool = true) {
+        if isPresented {
+            isPresented = false
+            removeMonitors()
+            panel.ignoresMouseEvents = true
+            onPresentedChange?(false)
+        } else if animated || !panel.isVisible {
+            return
+        }
+        guard animated else { finishClose(); return }
+        if reduceMotion() {
+            fade(to: 0) { [weak self] in self?.finishClose() }
+        } else {
+            fadeToken += 1
+            panel.alphaValue = 1
+            spring.retarget(0, Spring.closing)
+            run()
+        }
+    }
+
+    private func finishClose() {
+        guard !isPresented else { return }
+        link?.isPaused = true
+        fadeToken += 1
+        spring.snap(to: 0)
+        apply(0)
+        panel.orderOut(nil)
+        panel.alphaValue = 1
+    }
+
+    private func apply(_ progress: CGFloat) {
+        view.setProgress(progress)
+        onProgress?(progress)
+    }
+
+    private func run() {
+        if link == nil {
+            let link = view.displayLink(target: self, selector: #selector(tick(_:)))
+            link.isPaused = true
+            link.add(to: .main, forMode: .common)
+            self.link = link
+        }
+        guard let link, link.isPaused else { return }
+        lastTick = CACurrentMediaTime()
+        link.isPaused = false
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        let now = CACurrentMediaTime()
+        spring.advance(by: now - lastTick)
+        lastTick = now
+        apply(CGFloat(spring.value))
+        guard spring.isSettled else { return }
+        link.isPaused = true
+        if spring.target == 0 { finishClose() }
+    }
+
+    private func fade(to alpha: CGFloat, completion: (() -> Void)?) {
+        link?.isPaused = true
+        fadeToken += 1
+        let token = fadeToken
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            panel.animator().alphaValue = alpha
+        } completionHandler: { [weak self] in
+            guard let self, self.fadeToken == token else { return }
+            completion?()
+        }
+    }
+
+    enum Route: Equatable { case pass, close, consumeAndClose, quit }
+
+    /// Event routing while presented. Clicks on the source pass through to its
+    /// own toggle (never swallowed, never a second toggle); clicks inside the
+    /// silhouette stay; anything else closes. Escape closes, ⌘Q quits.
+    static func route(keyCode: UInt16?, command: Bool, characters: String?,
+                      inPanel: Bool, insideShape: Bool, inSource: Bool) -> Route {
+        if let keyCode {
+            if keyCode == 53 { return .consumeAndClose }
+            if command, characters?.lowercased() == "q" { return .quit }
+            return .pass
+        }
+        if inPanel { return insideShape ? .pass : .close }
+        return inSource ? .pass : .close
+    }
+
+    func handleLocal(_ event: NSEvent) -> NSEvent? {
+        let key = event.type == .keyDown
+        let inPanel = event.window === panel
+        switch Self.route(keyCode: key ? event.keyCode : nil, command: event.modifierFlags.contains(.command),
+                          characters: key ? event.charactersIgnoringModifiers : nil, inPanel: inPanel,
+                          insideShape: inPanel && view.shapeContains(event.locationInWindow),
+                          inSource: sourceRect.contains(NSEvent.mouseLocation)) {
+        case .pass: return event
+        case .close: close(); return event
+        case .consumeAndClose: close(); return nil
+        case .quit: NSApp.terminate(nil); return nil
+        }
+    }
+
+    func handleOutside(at point: NSPoint) {
+        if Self.route(keyCode: nil, command: false, characters: nil, inPanel: false, insideShape: false,
+                      inSource: sourceRect.contains(point)) == .close { close() }
+    }
+
+    private func installMonitors() {
+        removeMonitors()
+        if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown],
+                                                        handler: { [weak self] event in self?.handleLocal(event) ?? event }) {
+            monitors.append(local)
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown],
+                                                          handler: { [weak self] _ in self?.handleOutside(at: NSEvent.mouseLocation) }) {
+            monitors.append(global)
+        }
+        let center = NSWorkspace.shared.notificationCenter
+        observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil,
+                                            queue: .main) { [weak self] note in
+            // Another app came forward (⌘Tab, Dock); our own key focus does not count.
+            let activated = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            if activated?.processIdentifier != ProcessInfo.processInfo.processIdentifier { self?.close() }
+        })
+        observers.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil,
+                                            queue: .main) { [weak self] _ in self?.close() })
+    }
+
+    private func removeMonitors() {
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors.removeAll()
+        observers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
+        observers.removeAll()
+    }
+
+    deinit { removeMonitors() }
+}
+
+// MARK: - Notch wing window
+
+/// Draws the wing and the indicator white on black.
+final class WingView: NSView {
+    var wing: NotchWing? { didSet { needsDisplay = true } }
+    var attach: CGFloat = 0 { didSet { if attach != oldValue { needsDisplay = true } } }
     var indicator: NSImage? { didSet { needsDisplay = true } }
     var onClick: (() -> Void)?
 
     override var isOpaque: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { onClick?() }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let wing else { return }
+        // The strip behind the housing answers only while the details hang below.
+        if wing.hitRect.contains(convert(event.locationInWindow, from: nil)) || attach > 0 { onClick?() }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
+        guard let wing else { return }
         NSColor.black.setFill()
-        NotchGeometry.shapePath(in: bounds).fill()
+        wing.path(attach: attach).fill()
         guard let indicator, let context = NSGraphicsContext.current else { return }
-        let target = NotchGeometry.contentRect(in: bounds)
+        let target = wing.indicatorRect
         context.saveGraphicsState()
-        // Tint the template: keep its alpha, replace its color with white.
+        // Tint the template: keep its alpha, replace its colour with white.
         context.cgContext.beginTransparencyLayer(in: target, auxiliaryInfo: nil)
         indicator.draw(in: target)
         NSColor.white.setFill()
@@ -440,9 +1114,9 @@ final class NotchOverlayView: NSView {
     override func accessibilityPerformPress() -> Bool { onClick?(); return true }
 }
 
-final class NotchOverlayPanel: NSPanel {
+final class WingPanel: NSPanel {
     convenience init() {
-        self.init(contentRect: NSRect(x: 0, y: 0, width: NotchGeometry.overlayWidth, height: 32),
+        self.init(contentRect: NSRect(x: 0, y: 0, width: 100, height: 32),
                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         isOpaque = false
         backgroundColor = .clear
@@ -454,135 +1128,21 @@ final class NotchOverlayPanel: NSPanel {
         isMovable = false
         animationBehavior = .none
         becomesKeyOnlyIfNeeded = true
-        contentView = NotchOverlayView(frame: NSRect(x: 0, y: 0, width: NotchGeometry.overlayWidth, height: 32))
+        allowsToolTipsWhenApplicationIsInactive = true
+        contentView = WingView(frame: NSRect(x: 0, y: 0, width: 100, height: 32))
     }
 
-    var overlayView: NotchOverlayView { contentView as! NotchOverlayView }
+    var wingView: WingView { contentView as! WingView }
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
-    // Keep the frame at the top edge beside the notch instead of below the menu bar.
+    // Keep the frame at the top edge beside the housing instead of below the menu bar.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
-}
 
-// MARK: - Attached details
-
-/// A broad, flat connection replaces the popover's triangular arrow.
-final class AttachedSurface: NSView {
-    var connection = NSRect.zero
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.black.setFill()
-        NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: bounds.width,
-                                        height: bounds.height - 6), xRadius: 16, yRadius: 16).fill()
-        NSBezierPath(rect: connection).fill()
+    func place(_ wing: NotchWing) {
+        setFrame(wing.frame, display: false)
+        wingView.frame = NSRect(origin: .zero, size: wing.frame.size)
+        wingView.wing = wing
     }
-}
-
-final class DetailsPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
-}
-
-final class AttachedDetails {
-    let panel: DetailsPanel
-    let surface = AttachedSurface()
-    private var localMonitor: Any?
-    private var globalMonitor: Any?
-    private var anchorRect = NSRect.zero
-    private(set) var isShown = false
-    private var transition = 0
-
-    init(controller: StatusViewController) {
-        panel = DetailsPanel(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: true)
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = true
-        panel.level = .statusBar
-        panel.hidesOnDeactivate = false
-        panel.isReleasedWhenClosed = false
-        panel.animationBehavior = .none
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-        panel.appearance = NSAppearance(named: .darkAqua)
-        panel.contentView = surface
-        controller.loadViewIfNeeded()
-        surface.addSubview(controller.view)
-    }
-
-    static func frame(anchor: NSRect, contentSize: NSSize, screen: NSRect, besideNotch: Bool) -> NSRect {
-        let width = contentSize.width
-        let x = besideNotch ? anchor.minX : anchor.midX - width / 2
-        return NSRect(x: min(max(x, screen.minX + 8), screen.maxX - width - 8),
-                      y: anchor.minY - contentSize.height - 6, width: width, height: contentSize.height + 6)
-    }
-
-    func show(anchor: NSView, controller: StatusViewController, besideNotch: Bool) {
-        guard let window = anchor.window, let screen = window.screen else { return }
-        anchorRect = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
-        let size = controller.preferredContentSize
-        let frame = Self.frame(anchor: anchorRect, contentSize: size, screen: screen.frame, besideNotch: besideNotch)
-        panel.setFrame(frame, display: false)
-        surface.frame = NSRect(origin: .zero, size: frame.size)
-        surface.connection = NSRect(x: anchorRect.minX - frame.minX, y: size.height - 16,
-                                    width: anchorRect.width, height: 22).intersection(surface.bounds)
-        surface.needsDisplay = true
-        controller.view.frame = NSRect(origin: .zero, size: size)
-        controller.view.layoutSubtreeIfNeeded()
-        transition += 1
-        isShown = true
-        NSApp.activate(ignoringOtherApps: true)
-        panel.alphaValue = 0
-        panel.makeKeyAndOrderFront(nil)
-        animate(to: 1)
-        installMonitors()
-    }
-
-    func close(animated: Bool = true) {
-        guard isShown else { return }
-        isShown = false
-        removeMonitors()
-        transition += 1
-        let current = transition
-        if !animated { panel.orderOut(nil); return }
-        animate(to: 0) { [weak self] in
-            guard let self, self.transition == current, !self.isShown else { return }
-            self.panel.orderOut(nil)
-        }
-    }
-
-    private func animate(to alpha: CGFloat, completion: (() -> Void)? = nil) {
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.14
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            context.allowsImplicitAnimation = true
-            panel.animator().alphaValue = alpha
-        } completionHandler: { completion?() }
-    }
-
-    private func installMonitors() {
-        removeMonitors()
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
-            guard let self else { return event }
-            if event.type == .keyDown {
-                if event.keyCode == 53 { self.close(); return nil }
-            } else if event.window !== self.panel && !self.anchorRect.contains(NSEvent.mouseLocation) {
-                self.close()
-            }
-            return event
-        }
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            guard let self, !self.anchorRect.contains(NSEvent.mouseLocation) else { return }
-            self.close()
-        }
-    }
-
-    private func removeMonitors() {
-        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
-        if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
-        localMonitor = nil
-        globalMonitor = nil
-    }
-
-    deinit { removeMonitors() }
 }
 
 // MARK: - App
@@ -591,29 +1151,34 @@ final class App: NSObject, NSApplicationDelegate {
     static let notchDefaultsKey = "showAtNotch"
     let status = NSStatusBar.system.statusItem(withLength: MenuBarIndicators.size.width + 8)
     let metrics = Metrics()
-    let vc = StatusViewController()
+    let content = IslandContentView(width: IslandLayout.menuBarWidth)
+    private lazy var presenter = IslandPresenter(content: content)
+    private lazy var wingPanel = WingPanel()
+    private var wing: NotchWing?
     private var timer: Timer?
-    private lazy var panel = NotchOverlayPanel()
-    private var overlayActive = false
-    private lazy var details = AttachedDetails(controller: vc)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let button = status.button else { return }
         UserDefaults.standard.register(defaults: [Self.notchDefaultsKey: true])
-        button.setAccessibilityLabel("Systemstatus")
+        button.setAccessibilityLabel("tinyStats")
         button.target = self
-        button.action = #selector(togglePopover)
-        vc.onQuit = { NSApp.terminate(nil) }
-        vc.onNotchToggle = { [weak self] enabled in
+        button.action = #selector(toggleDetails)
+        content.onQuit = { NSApp.terminate(nil) }
+        content.onNotchToggle = { [weak self] enabled in
             UserDefaults.standard.set(enabled, forKey: Self.notchDefaultsKey)
             self?.updatePlacement()
         }
-        panel.overlayView.setAccessibilityLabel("Systemstatus")
-        panel.overlayView.onClick = { [weak self] in self?.togglePopover() }
+        wingPanel.wingView.setAccessibilityLabel("tinyStats")
+        wingPanel.wingView.onClick = { [weak self] in self?.toggleDetails() }
+        presenter.onProgress = { [weak self] progress in
+            self?.wingPanel.wingView.attach = Choreography.attach(progress)
+        }
+        presenter.onPresentedChange = { [weak self] shown in
+            // After the button's own mouse-up handling, which resets its highlight.
+            DispatchQueue.main.async { self?.status.button?.highlight(shown) }
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(applicationDeactivated),
-                                               name: NSApplication.didResignActiveNotification, object: nil)
         updatePlacement()
         sample()
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.sample() }
@@ -621,27 +1186,24 @@ final class App: NSObject, NSApplicationDelegate {
         RunLoop.main.add(timer, forMode: .common)
     }
 
-    @objc private func applicationDeactivated(_ notification: Notification) { details.close() }
-
     @objc private func screensChanged(_ notification: Notification) { updatePlacement() }
 
     /// Re-evaluates the primary display (first screen, carrying the menu bar).
     private func updatePlacement() {
-        let frame = NSScreen.screens.first.flatMap {
-            NotchGeometry.overlayFrame(screenFrame: $0.frame, rightArea: $0.auxiliaryTopRightArea,
-                                       topInset: $0.safeAreaInsets.top)
+        let available = NSScreen.screens.first.flatMap {
+            NotchWing.make(screenFrame: $0.frame, leftArea: $0.auxiliaryTopLeftArea,
+                           rightArea: $0.auxiliaryTopRightArea, topInset: $0.safeAreaInsets.top)
         }
         let enabled = UserDefaults.standard.bool(forKey: Self.notchDefaultsKey)
-        vc.setNotchOption(available: frame != nil, enabled: enabled)
-        let target = enabled ? frame : nil
-        details.close(animated: false)
-        overlayActive = target != nil
-        if let target {
-            panel.setFrame(target, display: true)
-            panel.orderFrontRegardless()
+        content.setNotchOption(available: available != nil, enabled: enabled)
+        presenter.close(animated: false)
+        wing = enabled ? available : nil
+        if let wing {
+            wingPanel.place(wing)
+            wingPanel.orderFrontRegardless()
             status.isVisible = false
         } else {
-            panel.orderOut(nil)
+            wingPanel.orderOut(nil)
             status.isVisible = true
         }
     }
@@ -651,25 +1213,31 @@ final class App: NSObject, NSApplicationDelegate {
         let gpu = metrics.gpu()
         let ram = metrics.ram()
         let rates = metrics.network()
-        vc.updateMetrics(cpu: cpu, gpu: gpu, ram: ram, net: rates)
-        let description = "CPU \(StatusViewController.percent(cpu)) · GPU \(StatusViewController.percent(gpu)) · RAM geschätzt \(StatusViewController.percent(ram)) · Download \(StatusViewController.formatRate(rates?.downloadBytesPerSecond)) · Upload \(StatusViewController.formatRate(rates?.uploadBytesPerSecond))"
-            .replacingOccurrences(of: "—", with: "Nicht verfügbar")
+        content.update(cpu: cpu, gpu: gpu, ram: ram, net: rates)
+        let summary = Format.summary(cpu: cpu, gpu: gpu, ram: ram, net: rates)
         let image = MenuBarIndicators.image(cpu: cpu, gpu: gpu, ram: ram, net: rates)
         status.button?.image = image
-        status.button?.toolTip = description
-        status.button?.setAccessibilityValue(description)
-        panel.overlayView.indicator = image
-        panel.overlayView.toolTip = description
-        panel.overlayView.setAccessibilityValue(description)
+        status.button?.toolTip = summary
+        status.button?.setAccessibilityValue(summary)
+        wingPanel.wingView.indicator = image
+        wingPanel.wingView.toolTip = summary
+        wingPanel.wingView.setAccessibilityValue(summary)
     }
 
-    @objc func togglePopover() {
-        let anchor: NSView? = overlayActive ? panel.overlayView : status.button
-        guard let anchor else { return }
-        if details.isShown {
-            details.close()
-        } else {
-            details.show(anchor: anchor, controller: vc, besideNotch: overlayActive)
+    /// Island geometry for the active placement and the clickable source rect.
+    private func currentLayout() -> (IslandLayout, NSRect)? {
+        if let wing { return (.notch(wing, height: IslandContentView.height), wing.frame) }
+        guard let button = status.button, let window = button.window, let screen = window.screen else { return nil }
+        let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
+        return (.menuBar(anchor: anchor, screen: screen.frame, visibleTop: screen.visibleFrame.maxY,
+                         height: IslandContentView.height), anchor)
+    }
+
+    @objc func toggleDetails() {
+        if presenter.isPresented {
+            presenter.close()
+        } else if let (layout, source) = currentLayout() {
+            presenter.open(layout: layout, source: source)
         }
     }
 

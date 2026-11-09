@@ -1,5 +1,6 @@
 # Binary
 /hsb-mb
+/tinystats
 
 # Build-Ausgaben
 *.o
@@ -7,3 +8,4 @@
 .DS_Store
 /hsb-mb-next
 /Systemstatus.app/
+/tinyStats.app/
