@@ -412,6 +412,13 @@ struct NotchWing: Equatable {
         }.first
     }
 
+    /// Whether a menu bar away from the wing would otherwise show no tinyStats.
+    /// Every display has a menu bar with separate Spaces, otherwise only the
+    /// primary (first) one does. macOS cannot hide a status item per display.
+    func needsStatusItem(screens: [NSRect], separateSpaces: Bool) -> Bool {
+        (separateSpaces ? screens[...] : screens.prefix(1)).contains { !$0.contains(frame) }
+    }
+
     /// Window coordinates. Concave flare where the right edge meets the top of
     /// the display, straight lower edge on the housing's lower edge, convex free
     /// lower-right corner that squares off (`attach` → 1) while details hang
@@ -1316,7 +1323,7 @@ final class App: NSObject, NSApplicationDelegate {
         UserDefaults.standard.register(defaults: [Self.notchDefaultsKey: true])
         button.setAccessibilityLabel("tinyStats")
         button.target = self
-        button.action = #selector(toggleDetails)
+        button.action = #selector(statusItemClicked)
         content.onQuit = { NSApp.terminate(nil) }
         content.onNotchToggle = { [weak self] enabled in
             UserDefaults.standard.set(enabled, forKey: Self.notchDefaultsKey)
@@ -1327,11 +1334,14 @@ final class App: NSObject, NSApplicationDelegate {
         presenter.onProgress = { [weak self] progress in
             guard let self, self.wing != nil else { return }
             // Only join the lower corner; the compact wing never changes width.
-            self.wingPanel.follow(attach: Choreography.attach(progress))
+            // A card floating under the status item leaves the wing alone.
+            let attached = self.presenter.view.layout?.isFloating == false
+            self.wingPanel.follow(attach: attached ? Choreography.attach(progress) : 0)
         }
         presenter.onPresentedChange = { [weak self] shown in
+            let highlighted = shown && self?.presenter.view.layout?.isFloating == true
             // After the button's own mouse-up handling, which resets its highlight.
-            DispatchQueue.main.async { self?.status.button?.highlight(shown) }
+            DispatchQueue.main.async { self?.status.button?.highlight(highlighted) }
         }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -1354,7 +1364,8 @@ final class App: NSObject, NSApplicationDelegate {
         if let wing {
             wingPanel.place(wing)
             wingPanel.orderFrontRegardless()
-            status.isVisible = false
+            status.isVisible = wing.needsStatusItem(screens: NSScreen.screens.map(\.frame),
+                                                    separateSpaces: NSScreen.screensHaveSeparateSpaces)
         } else {
             wingPanel.orderOut(nil)
             status.isVisible = true
@@ -1377,19 +1388,25 @@ final class App: NSObject, NSApplicationDelegate {
         wingPanel.wingView.setAccessibilityValue(summary)
     }
 
-    /// Island geometry for the active placement and the clickable source rect.
-    private func currentLayout() -> (IslandLayout, NSRect)? {
-        if let wing { return (.notch(wing, height: IslandContentView.height), wing.frame) }
+    /// Island geometry for the clicked source and its clickable rect. The status
+    /// item opens under itself, except on the notched display, where it joins the wing.
+    private func currentLayout(fromStatusItem: Bool) -> (IslandLayout, NSRect)? {
+        if let wing, !fromStatusItem { return (.notch(wing, height: IslandContentView.height), wing.frame) }
         guard let button = status.button, let window = button.window, let screen = window.screen else { return nil }
         let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
+        if let wing, screen.frame.contains(wing.frame) {
+            return (.notch(wing, height: IslandContentView.height), anchor.union(wing.frame))
+        }
         return (.menuBar(anchor: anchor, screen: screen.frame, visibleTop: screen.visibleFrame.maxY,
                          height: IslandContentView.height), anchor)
     }
 
-    @objc func toggleDetails() {
+    @objc private func statusItemClicked() { toggleDetails(fromStatusItem: true) }
+
+    func toggleDetails(fromStatusItem: Bool = false) {
         if presenter.isPresented {
             presenter.close()
-        } else if let (layout, source) = currentLayout() {
+        } else if let (layout, source) = currentLayout(fromStatusItem: fromStatusItem) {
             presenter.open(layout: layout, source: source)
         }
     }
