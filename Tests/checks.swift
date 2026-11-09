@@ -528,6 +528,24 @@ var cancelled = 0
 panel.onCancel = { cancelled += 1 }
 panel.cancelOperation(nil)
 assert(cancelled == 1, "Escape through the responder chain also closes")
+// A status item answers across the full bar height, so its window identifies the
+// source even when the click lands outside the shorter button (the source rect).
+let sourceHost = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 80, height: 33), styleMask: .borderless, backing: .buffered, defer: false)
+let unrelatedHost = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 80, height: 33), styleMask: .borderless, backing: .buffered, defer: false)
+func mouseDown(in window: NSWindow) -> NSEvent {
+    NSEvent.mouseEvent(with: .leftMouseDown, location: NSPoint(x: 40, y: 31), modifierFlags: [], timestamp: 0,
+                       windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+}
+assert(mouseDown(in: sourceHost).window === sourceHost, "Synthetic events resolve their window")
+presenter.reduceMotion = { true }
+presenter.open(layout: notchLayout, source: .zero, sourceWindow: sourceHost)
+assert(presenter.handleLocal(mouseDown(in: sourceHost)) != nil && presenter.isPresented,
+       "A click anywhere in the source window is left to its own toggle, so it cannot close and reopen")
+_ = presenter.handleLocal(mouseDown(in: unrelatedHost))
+assert(!presenter.isPresented, "A click in any other window still closes")
+presenter.close(animated: false)
+assert(!panel.isVisible)
+
 let now = Date()
 assert(!SingleInstance.shouldYield(ownLaunch: now, otherLaunches: []), "Alone: start")
 assert(SingleInstance.shouldYield(ownLaunch: now, otherLaunches: [now.addingTimeInterval(-60)]), "Older instance wins")

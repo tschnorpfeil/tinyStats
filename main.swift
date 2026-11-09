@@ -1005,6 +1005,7 @@ final class IslandPresenter: NSObject {
     private var observers: [NSObjectProtocol] = []
     private var fadeToken = 0
     private(set) var sourceRect = NSRect.zero
+    private weak var sourceWindow: NSWindow?
     var onProgress: ((CGFloat) -> Void)?
     var onPresentedChange: ((Bool) -> Void)?
     var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
@@ -1016,12 +1017,15 @@ final class IslandPresenter: NSObject {
         panel.onCancel = { [weak self] in self?.close() }
     }
 
-    /// `source` is the clickable origin in screen coordinates; clicks there
-    /// belong to its own toggle and never count as outside clicks.
-    func open(layout: IslandLayout, source: NSRect) {
+    /// `source` is the clickable origin in screen coordinates and `sourceWindow`
+    /// the window hosting it; clicks in either belong to its own toggle and never
+    /// count as outside clicks. The window matters because a status item answers
+    /// across the full menu bar height, well beyond its button's bounds.
+    func open(layout: IslandLayout, source: NSRect, sourceWindow: NSWindow?) {
         guard !isPresented else { return }
         isPresented = true
         sourceRect = source
+        self.sourceWindow = sourceWindow
         let still = reduceMotion()
         if !panel.isVisible {
             // A reversal keeps the geometry already in flight.
@@ -1139,7 +1143,8 @@ final class IslandPresenter: NSObject {
         switch Self.route(keyCode: key ? event.keyCode : nil, command: event.modifierFlags.contains(.command),
                           characters: key ? event.charactersIgnoringModifiers : nil, inPanel: inPanel,
                           insideShape: inPanel && view.shapeContains(event.locationInWindow),
-                          inSource: sourceRect.contains(NSEvent.mouseLocation)) {
+                          inSource: (event.window != nil && event.window === sourceWindow)
+                              || sourceRect.contains(NSEvent.mouseLocation)) {
         case .pass: return event
         case .close: close(); return event
         case .consumeAndClose: close(); return nil
@@ -1366,20 +1371,20 @@ final class App: NSObject, NSApplicationDelegate {
         wingPanel.wingView.setAccessibilityValue(summary)
     }
 
-    /// Island geometry for the active placement and the clickable source rect.
-    private func currentLayout() -> (IslandLayout, NSRect)? {
-        if let wing { return (.notch(wing, height: IslandContentView.height), wing.frame) }
+    /// Island geometry for the active placement, plus the clickable source rect and its window.
+    private func currentLayout() -> (IslandLayout, NSRect, NSWindow)? {
+        if let wing { return (.notch(wing, height: IslandContentView.height), wing.frame, wingPanel) }
         guard let button = status.button, let window = button.window, let screen = window.screen else { return nil }
         let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
         return (.menuBar(anchor: anchor, screen: screen.frame, visibleTop: screen.visibleFrame.maxY,
-                         height: IslandContentView.height), anchor)
+                         height: IslandContentView.height), anchor, window)
     }
 
     @objc func toggleDetails() {
         if presenter.isPresented {
             presenter.close()
-        } else if let (layout, source) = currentLayout() {
-            presenter.open(layout: layout, source: source)
+        } else if let (layout, source, window) = currentLayout() {
+            presenter.open(layout: layout, source: source, sourceWindow: window)
         }
     }
 
