@@ -21,35 +21,37 @@ final class PreviewCanvas: NSView {
         }
     }
 }
-func writePreview(notch: Bool, to path: String) throws {
+func writePreview(notch: Bool, collapsed: Bool = false, to path: String) throws {
+    let canvasSize = collapsed ? NSSize(width: 480, height: 88) : canvasSize
+    let barBottom = canvasSize.height - 32
     let canvas = PreviewCanvas(frame: NSRect(origin: .zero, size: canvasSize))
     canvas.appearance = NSAppearance(named: .darkAqua)
-    let wing = NotchWing(notch: NSRect(x: 114, y: 198, width: 179, height: 32))
-    let anchor = NSRect(x: 207, y: 198, width: 66, height: 32)
+    let wing = NotchWing(notch: NSRect(x: 114, y: barBottom, width: 179, height: 32))
+    let anchor = NSRect(x: 207, y: barBottom, width: 66, height: 32)
     let layout = notch ? IslandLayout.notch(wing, height: IslandContentView.height)
-        : IslandLayout.menuBar(anchor: anchor, screen: canvas.bounds, visibleTop: 198, height: IslandContentView.height)
+        : IslandLayout.menuBar(anchor: anchor, screen: canvas.bounds, visibleTop: barBottom, height: IslandContentView.height)
     let content = IslandContentView(width: layout.width)
     content.setNotchOption(available: notch, enabled: notch)
     content.update(cpu: 0.23, gpu: 0.07, ram: 0.62, net: rates)
     let island = IslandView(content: content)
     island.configure(layout)
-    island.setProgress(1)
+    island.setProgress(collapsed ? 0 : 1)
     island.setFrameOrigin(layout.frame.origin)
     canvas.addSubview(island)
     if notch {
         canvas.housing = wing.notch
         let view = WingView(frame: wing.frame)
         view.wing = wing
-        view.attach = 1
+        view.attach = collapsed ? 0 : 1
         view.indicator = indicator
         canvas.addSubview(view)
     } else {
-        let view = NSImageView(frame: NSRect(x: anchor.midX - 29, y: 203, width: 58, height: 22))
+        let view = NSImageView(frame: NSRect(x: anchor.midX - 29, y: barBottom + 5, width: 58, height: 22))
         view.image = indicator
         view.contentTintColor = .white
         canvas.addSubview(view)
     }
-    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 960, pixelsHigh: 460,
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(canvasSize.width * 2), pixelsHigh: Int(canvasSize.height * 2),
                               bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                               colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
     rep.size = canvasSize
@@ -58,3 +60,4 @@ func writePreview(notch: Bool, to path: String) throws {
 }
 try writePreview(notch: true, to: "docs/images/notch.png")
 try writePreview(notch: false, to: "docs/images/menu-bar.png")
+try writePreview(notch: true, collapsed: true, to: "docs/images/notch-collapsed.png")

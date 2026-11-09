@@ -2,6 +2,8 @@
 
 CPU, GPU, RAM und Netzwerk direkt neben der MacBook-Notch. Ohne Notch in der Menüleiste. Ein Klick öffnet die Details.
 
+<img src="docs/images/notch-collapsed.png" alt="tinyStats eingeklappt neben der Notch" width="480">
+
 | Mit Notch | Ohne Notch |
 | :---: | :---: |
 | ![tinyStats neben der Notch mit geöffneten Details](docs/images/notch.png) | ![tinyStats in der Menüleiste mit geöffneter Karte](docs/images/menu-bar.png) |
