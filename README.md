@@ -2,6 +2,12 @@
 
 CPU, GPU, RAM und Netzwerk direkt neben der MacBook-Notch. Ohne Notch in der Menüleiste. Ein Klick öffnet die Details.
 
+| Mit Notch | Ohne Notch |
+| :---: | :---: |
+| ![tinyStats neben der Notch mit geöffneten Details](docs/images/notch.png) | ![tinyStats in der Menüleiste mit geöffneter Karte](docs/images/menu-bar.png) |
+
+*Native Renderings mit Beispielwerten.*
+
 Die drei Balken zeigen von links nach rechts CPU, GPU und RAM. Daneben: Upload ↑ und Download ↓. RAM ist eine Schätzung; GPU-Werte sind nicht auf jeder Hardware verfügbar.
 
 ## Installieren
