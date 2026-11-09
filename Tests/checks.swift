@@ -1,3 +1,5 @@
+import AppKit
+
 extension Metrics {
     var networkBaselineTimeForCheck: TimeInterval? { prevNetTime }
 }

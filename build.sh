@@ -3,7 +3,7 @@ set -eu
 cd "$(dirname "$0")"
 task_bundle="tinyStats.app"
 mkdir -p "$task_bundle/Contents/MacOS"
-swiftc -O main.swift -o "$task_bundle/Contents/MacOS/tinyStats-next"
+swiftc -O Sources/*.swift -o "$task_bundle/Contents/MacOS/tinyStats-next"
 mv "$task_bundle/Contents/MacOS/tinyStats-next" "$task_bundle/Contents/MacOS/tinyStats"
 # The bundle identifier stays the same as before the rename, so the stored
 # notch preference carries over.

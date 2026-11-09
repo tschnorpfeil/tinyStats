@@ -1,0 +1,354 @@
+import AppKit
+import QuartzCore
+
+// MARK: - Details island
+
+/// Draws the silhouette for the current progress, fading it between
+/// transparent and black, and reveals the content inside the body as it opens.
+final class IslandView: NSView {
+    let content: IslandContentView
+    private let clip = NSView()
+    private(set) var layout: IslandLayout?
+    private(set) var progress: CGFloat = 0
+
+    init(content: IslandContentView) {
+        self.content = content
+        super.init(frame: .zero)
+        wantsLayer = true
+        clip.wantsLayer = true
+        clip.clipsToBounds = true
+        clip.autoresizesSubviews = false
+        clip.layer?.masksToBounds = true
+        clip.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        addSubview(clip)
+        clip.addSubview(content)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var isOpaque: Bool { false }
+
+    func configure(_ layout: IslandLayout) {
+        self.layout = layout
+        clip.layer?.maskedCorners = layout.isFloating
+            ? [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+            : [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        frame = NSRect(origin: .zero, size: layout.frame.size)
+        content.layout(width: layout.width)
+        setProgress(progress)
+    }
+
+    func setProgress(_ value: CGFloat) {
+        progress = value
+        guard let layout else { return }
+        needsDisplay = true
+        let body = layout.bodyRect(at: value)
+        clip.isHidden = body.height < 1
+        clip.frame = body
+        clip.layer?.cornerRadius = layout.shape(at: value).radius
+        let final = layout.finalBodyRect
+        content.setFrameOrigin(NSPoint(x: final.minX - body.minX,
+                                       y: final.maxY - body.minY - content.frame.height + Choreography.contentDrop(value)))
+        content.alphaValue = Choreography.contentAlpha(value)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let layout else { return }
+        NSColor.black.withAlphaComponent(Choreography.backgroundAlpha(progress)).setFill()
+        layout.path(at: progress).fill()
+    }
+
+    func shapeContains(_ point: NSPoint) -> Bool { layout?.path(at: progress).contains(point) ?? false }
+}
+
+final class IslandPanel: NSPanel {
+    var onCancel: (() -> Void)?
+
+    init() {
+        super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        level = .statusBar
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+        isMovable = false
+        animationBehavior = .none
+        allowsToolTipsWhenApplicationIsInactive = true
+        appearance = NSAppearance(named: .darkAqua)
+        setAccessibilityLabel("tinyStats")
+    }
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+    override func cancelOperation(_ sender: Any?) { onCancel?() }
+}
+
+/// The only details presenter: grows the island out of its source and back,
+/// driven by one spring on the display link. Reversals retarget in flight.
+final class IslandPresenter: NSObject {
+    let view: IslandView
+    let panel = IslandPanel()
+    private(set) var spring = Spring()
+    private(set) var isPresented = false
+    private var link: CADisplayLink?
+    private var lastTick: CFTimeInterval = 0
+    private var monitors: [Any] = []
+    private var observers: [NSObjectProtocol] = []
+    private var fadeToken = 0
+    private(set) var sourceRect = NSRect.zero
+    var onProgress: ((CGFloat) -> Void)?
+    var onPresentedChange: ((Bool) -> Void)?
+    var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    init(content: IslandContentView) {
+        view = IslandView(content: content)
+        super.init()
+        panel.contentView = view
+        panel.onCancel = { [weak self] in self?.close() }
+    }
+
+    /// `source` is the clickable origin in screen coordinates; clicks there
+    /// belong to its own toggle and never count as outside clicks.
+    func open(layout: IslandLayout, source: NSRect) {
+        guard !isPresented else { return }
+        isPresented = true
+        sourceRect = source
+        let still = reduceMotion()
+        if !panel.isVisible {
+            // A reversal keeps the geometry already in flight.
+            view.configure(layout)
+            panel.setFrame(layout.frame, display: false)
+            spring.snap(to: 0)
+            apply(0)
+            panel.alphaValue = still ? 0 : 1
+        }
+        panel.ignoresMouseEvents = false
+        panel.makeKeyAndOrderFront(nil)
+        installMonitors()
+        onPresentedChange?(true)
+        if still {
+            spring.snap(to: 1)
+            apply(1)
+            fade(to: 1, completion: nil)
+        } else {
+            fadeToken += 1
+            panel.alphaValue = 1
+            spring.retarget(1, Spring.opening)
+            run()
+        }
+    }
+
+    func close(animated: Bool = true) {
+        if isPresented {
+            isPresented = false
+            removeMonitors()
+            panel.ignoresMouseEvents = true
+            onPresentedChange?(false)
+        } else if animated || !panel.isVisible {
+            return
+        }
+        guard animated else { finishClose(); return }
+        if reduceMotion() {
+            fade(to: 0) { [weak self] in self?.finishClose() }
+        } else {
+            fadeToken += 1
+            panel.alphaValue = 1
+            spring.retarget(0, Spring.closing)
+            run()
+        }
+    }
+
+    private func finishClose() {
+        guard !isPresented else { return }
+        link?.isPaused = true
+        fadeToken += 1
+        spring.snap(to: 0)
+        apply(0)
+        panel.orderOut(nil)
+        panel.alphaValue = 1
+    }
+
+    private func apply(_ progress: CGFloat) {
+        view.setProgress(progress)
+        onProgress?(progress)
+    }
+
+    private func run() {
+        if link == nil {
+            let link = view.displayLink(target: self, selector: #selector(tick(_:)))
+            link.isPaused = true
+            link.add(to: .main, forMode: .common)
+            self.link = link
+        }
+        guard let link, link.isPaused else { return }
+        lastTick = CACurrentMediaTime()
+        link.isPaused = false
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        // Step by presented frame time; callback time jitters from frame to frame.
+        let now = link.targetTimestamp
+        spring.advance(by: now - lastTick)
+        lastTick = now
+        apply(CGFloat(spring.value))
+        guard spring.isSettled else { return }
+        link.isPaused = true
+        if spring.target == 0 { finishClose() }
+    }
+
+    private func fade(to alpha: CGFloat, completion: (() -> Void)?) {
+        link?.isPaused = true
+        fadeToken += 1
+        let token = fadeToken
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            panel.animator().alphaValue = alpha
+        } completionHandler: { [weak self] in
+            guard let self, self.fadeToken == token else { return }
+            completion?()
+        }
+    }
+
+    enum Route: Equatable { case pass, close, consumeAndClose, quit }
+
+    /// Event routing while presented. Clicks on the source pass through to its
+    /// own toggle (never swallowed, never a second toggle); clicks inside the
+    /// silhouette stay; anything else closes. Escape closes, ⌘Q quits.
+    static func route(keyCode: UInt16?, command: Bool, characters: String?,
+                      inPanel: Bool, insideShape: Bool, inSource: Bool) -> Route {
+        if let keyCode {
+            if keyCode == 53 { return .consumeAndClose }
+            if command, characters?.lowercased() == "q" { return .quit }
+            return .pass
+        }
+        if inPanel { return insideShape ? .pass : .close }
+        return inSource ? .pass : .close
+    }
+
+    func handleLocal(_ event: NSEvent) -> NSEvent? {
+        let key = event.type == .keyDown
+        let inPanel = event.window === panel
+        switch Self.route(keyCode: key ? event.keyCode : nil, command: event.modifierFlags.contains(.command),
+                          characters: key ? event.charactersIgnoringModifiers : nil, inPanel: inPanel,
+                          insideShape: inPanel && view.shapeContains(event.locationInWindow),
+                          inSource: sourceRect.contains(NSEvent.mouseLocation)) {
+        case .pass: return event
+        case .close: close(); return event
+        case .consumeAndClose: close(); return nil
+        case .quit: NSApp.terminate(nil); return nil
+        }
+    }
+
+    func handleOutside(at point: NSPoint) {
+        if Self.route(keyCode: nil, command: false, characters: nil, inPanel: false, insideShape: false,
+                      inSource: sourceRect.contains(point)) == .close { close() }
+    }
+
+    private func installMonitors() {
+        removeMonitors()
+        if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown],
+                                                        handler: { [weak self] event in self?.handleLocal(event) ?? event }) {
+            monitors.append(local)
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown],
+                                                          handler: { [weak self] _ in self?.handleOutside(at: NSEvent.mouseLocation) }) {
+            monitors.append(global)
+        }
+        let center = NSWorkspace.shared.notificationCenter
+        observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil,
+                                            queue: .main) { [weak self] note in
+            // Another app came forward (⌘Tab, Dock); our own key focus does not count.
+            let activated = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            if activated?.processIdentifier != ProcessInfo.processInfo.processIdentifier { self?.close() }
+        })
+        observers.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil,
+                                            queue: .main) { [weak self] _ in self?.close() })
+    }
+
+    private func removeMonitors() {
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors.removeAll()
+        observers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
+        observers.removeAll()
+    }
+
+    deinit { removeMonitors() }
+}
+
+// MARK: - Notch wing window
+
+/// Draws the wing and the indicator white on black.
+final class WingView: NSView {
+    var wing: NotchWing? { didSet { needsDisplay = true } }
+    var attach: CGFloat = 0 { didSet { if attach != oldValue { needsDisplay = true } } }
+    var indicator: NSImage? { didSet { needsDisplay = true } }
+    var onClick: (() -> Void)?
+
+    override var isOpaque: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let wing else { return }
+        // The strip behind the housing answers only while the details hang below.
+        if wing.hitRect.contains(convert(event.locationInWindow, from: nil)) || attach > 0 { onClick?() }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let wing else { return }
+        NSColor.black.setFill()
+        wing.path(attach: attach).fill()
+        guard let indicator, let context = NSGraphicsContext.current else { return }
+        let target = wing.indicatorRect
+        context.saveGraphicsState()
+        // Tint the template: keep its alpha, replace its colour with white.
+        context.cgContext.beginTransparencyLayer(in: target, auxiliaryInfo: nil)
+        indicator.draw(in: target)
+        NSColor.white.setFill()
+        target.fill(using: .sourceAtop)
+        context.cgContext.endTransparencyLayer()
+        context.restoreGraphicsState()
+    }
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityPerformPress() -> Bool { onClick?(); return true }
+}
+
+final class WingPanel: NSPanel {
+    convenience init() {
+        self.init(contentRect: NSRect(x: 0, y: 0, width: 100, height: 32),
+                  styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        level = .statusBar
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+        isMovable = false
+        animationBehavior = .none
+        becomesKeyOnlyIfNeeded = true
+        allowsToolTipsWhenApplicationIsInactive = true
+        contentView = WingView(frame: NSRect(x: 0, y: 0, width: 100, height: 32))
+    }
+
+    var wingView: WingView { contentView as! WingView }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+    // Keep the frame at the top edge beside the housing instead of below the menu bar.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+
+    func place(_ wing: NotchWing) {
+        wingView.wing = wing
+        setFrame(wing.frame, display: false)
+        wingView.frame = NSRect(origin: .zero, size: wing.frame.size)
+        follow(attach: 0)
+    }
+
+    func follow(attach: CGFloat) {
+        wingView.attach = attach
+    }
+}
