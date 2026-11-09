@@ -113,7 +113,7 @@ for locale in [Locale(identifier: "de_DE"), Locale(identifier: "en_US")] {
     }
 }
 let rows = MenuBarIndicators.rateRows(up: 1_500_000, down: 0)
-assert(rows.count == 2 && rows[0].arrow == "↑" && rows[0].y > rows[1].y && rows[1].arrow == "↓",
+assert(rows.count == 2 && rows[0].up && rows[0].y > rows[1].y && !rows[1].up,
        "Upload row on top, download row below")
 assert(rows[0].text == MenuBarIndicators.compactRate(1_500_000) && rows[1].text == "0B", "Rows keep their own measured rate")
 
@@ -783,7 +783,7 @@ assert(Metric.grouped(MetricLayout(storedTop: nil, storedMenuBar: nil, hasBatter
 assert(Metric.allCases.allSatisfy { ($0.category == nil) == ($0 == .network) }, "Only network, with its own tray, has no category")
 let freeCell = Metric.disk.cells(Sample(disk: DiskSpace(totalBytes: 994_000_000_000, freeBytes: 412_000_000_000)))[0]
 assert(freeCell.label == "Free" && freeCell.value == "412 GB", "Under the Storage heading the row only needs to say what it counts")
-let spokenList = MetricListView(frame: .zero)
+let spokenList = MetricListView()
 spokenList.metrics = MetricLayout().listed(hasBattery: true)
 spokenList.sample = chargingSample
 assert(spokenList.details.hasPrefix("Power: Battery 84 %") && spokenList.details.contains("; Storage: ") && spokenList.details.contains("; System: Swap"),

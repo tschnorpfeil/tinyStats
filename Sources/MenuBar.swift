@@ -44,8 +44,8 @@ enum MenuBarIndicators {
     }
 
     /// Upload on top, download below; each row keeps its own measured rate.
-    static func rateRows(up: Double?, down: Double?) -> [(arrow: String, text: String, y: CGFloat)] {
-        [("↑", compactRate(up), 11), ("↓", compactRate(down), 0)]
+    static func rateRows(up: Double?, down: Double?) -> [(up: Bool, text: String, y: CGFloat)] {
+        [(true, compactRate(up), 11), (false, compactRate(down), 0)]
     }
 
     /// Lightning bolt shared by the menu bar and the details.
@@ -99,7 +99,8 @@ enum MenuBarIndicators {
                     NSRect(x: track.midX - 1.5, y: track.midY - 0.5, width: 3, height: 1).fill()
                 }
             }
-            if case let .value(text, charging) = readout {
+            switch readout {
+            case let .value(text, charging):
                 let attributes: [NSAttributedString.Key: Any] = [.font: valueFont, .foregroundColor: NSColor.black]
                 let textSize = (text as NSString).size(withAttributes: attributes)
                 (text as NSString).draw(at: NSPoint(x: size.width - textSize.width, y: ((size.height - textSize.height) / 2).rounded()),
@@ -110,19 +111,17 @@ enum MenuBarIndicators {
                     drawBolt(in: NSRect(x: boltX, y: ((size.height - boltSize.height) / 2).rounded(),
                                         width: boltSize.width, height: boltSize.height), color: .black)
                 }
-                return true
-            }
-            guard case let .rates(up, down) = readout else { return true }
-            let rows = rateRows(up: up, down: down)
-            let attributes: [NSAttributedString.Key: Any] = [.font: rateFont, .foregroundColor: NSColor.black]
-            // Digits sit on the baseline and are cap-height tall; the arrow spans the same band.
-            let baseline = -rateFont.descender + (11 - rateFont.ascender + rateFont.descender) / 2
-            for (arrow, text, y) in rows {
-                let box = NSRect(x: barsWidth + groupGap, y: y + baseline + (rateFont.capHeight - arrowSize.height) / 2,
-                                 width: arrowSize.width, height: arrowSize.height)
-                drawArrow(up: arrow == "↑", in: box)
-                let width = (text as NSString).size(withAttributes: attributes).width
-                (text as NSString).draw(at: NSPoint(x: size.width - width, y: y), withAttributes: attributes)
+            case let .rates(up, down):
+                let attributes: [NSAttributedString.Key: Any] = [.font: rateFont, .foregroundColor: NSColor.black]
+                // Digits sit on the baseline and are cap-height tall; the arrow spans the same band.
+                let baseline = -rateFont.descender + (11 - rateFont.ascender + rateFont.descender) / 2
+                for row in rateRows(up: up, down: down) {
+                    drawArrow(up: row.up, in: NSRect(x: barsWidth + groupGap,
+                                                     y: row.y + baseline + (rateFont.capHeight - arrowSize.height) / 2,
+                                                     width: arrowSize.width, height: arrowSize.height))
+                    let width = (row.text as NSString).size(withAttributes: attributes).width
+                    (row.text as NSString).draw(at: NSPoint(x: size.width - width, y: row.y), withAttributes: attributes)
+                }
             }
             return true
         }

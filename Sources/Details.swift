@@ -41,6 +41,17 @@ enum IslandStyle {
         return result
     }
 
+    /// SF Symbol, centred vertically in a flipped view.
+    static func drawSymbol(_ name: String, _ configuration: NSImage.SymbolConfiguration, x: CGFloat, in bounds: NSRect,
+                           alignRight: Bool = false) {
+        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+        else { return }
+        let size = image.size
+        image.draw(in: NSRect(x: alignRight ? x - size.width : x, y: ((bounds.height - size.height) / 2).rounded(),
+                              width: size.width, height: size.height),
+                   from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+    }
+
     static func drawCentered(_ text: NSAttributedString, x: CGFloat, in bounds: NSRect, alignRight: Bool = false) {
         let size = text.size()
         let width = ceil(size.width), height = ceil(size.height)
@@ -49,8 +60,22 @@ enum IslandStyle {
     }
 }
 
+/// Flipped view that draws its text itself and reads as one text to VoiceOver.
+class ReadoutView: NSView {
+    init(label: String, frame: NSRect = .zero) {
+        super.init(frame: frame)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel(label)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var isFlipped: Bool { true }
+}
+
 /// Caption, value and a thin proportional meter for one gauge.
-final class MetricView: NSView {
+final class MetricView: ReadoutView {
     static let height: CGFloat = 50
     static let boltSize = NSSize(width: 6, height: 9)
     var metric: Metric { didSet { if metric != oldValue { describeMetric(); needsDisplay = true } } }
@@ -59,15 +84,11 @@ final class MetricView: NSView {
 
     init(metric: Metric) {
         self.metric = metric
-        super.init(frame: NSRect(x: 0, y: 0, width: 70, height: Self.height))
-        setAccessibilityElement(true)
-        setAccessibilityRole(.staticText)
+        super.init(label: metric.name, frame: NSRect(x: 0, y: 0, width: 70, height: Self.height))
         describeMetric()
     }
 
     required init?(coder: NSCoder) { nil }
-
-    override var isFlipped: Bool { true }
 
     override func accessibilityValue() -> Any? {
         Format.percent(value).replacingOccurrences(of: "—", with: "Not available") + (charging ? ", charging" : "")
@@ -117,22 +138,13 @@ final class MetricView: NSView {
 }
 
 /// Upload and download as one quiet tray. Rates are not normalised to a capacity.
-final class NetworkView: NSView {
+final class NetworkView: ReadoutView {
     static let height: CGFloat = 30
     var rates: NetworkRates? { didSet { needsDisplay = true } }
     private static let arrow = NSImage.SymbolConfiguration(pointSize: 9.5, weight: .bold)
         .applying(NSImage.SymbolConfiguration(paletteColors: [IslandStyle.secondary]))
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.staticText)
-        setAccessibilityLabel("Network")
-    }
-
-    required init?(coder: NSCoder) { nil }
-
-    override var isFlipped: Bool { true }
+    convenience init() { self.init(label: "Network") }
 
     /// Reading order upload, then download, matching the menu bar (upload on top).
     static func entries(_ rates: NetworkRates?) -> [(symbol: String, name: String, value: Double?)] {
@@ -151,13 +163,7 @@ final class NetworkView: NSView {
         NSRect(x: (bounds.midX - 0.5).rounded(), y: 9, width: 1, height: bounds.height - 18).fill()
         for (index, entry) in Self.entries(rates).enumerated() {
             let x = CGFloat(index) * bounds.width / 2 + 11
-            if let image = NSImage(systemSymbolName: entry.symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(Self.arrow) {
-                let size = image.size
-                image.draw(in: NSRect(x: x, y: ((bounds.height - size.height) / 2).rounded(),
-                                      width: size.width, height: size.height),
-                           from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            }
+            IslandStyle.drawSymbol(entry.symbol, Self.arrow, x: x, in: bounds)
             IslandStyle.drawCentered(IslandStyle.measure(Format.rate(entry.value), number: IslandStyle.rate,
                                                          unit: IslandStyle.rateUnit), x: x + 14, in: bounds)
         }
@@ -167,7 +173,7 @@ final class NetworkView: NSView {
 /// One labelled column per category, on the same grid as the tiles, for every
 /// metric not on a tile. No category ever holds more than `rows` cells, so
 /// neither a sample nor a new choice can change the height.
-final class MetricListView: NSView {
+final class MetricListView: ReadoutView {
     static let headerHeight: CGFloat = 17
     static let rowHeight: CGFloat = 30
     static let rows = 3
@@ -175,16 +181,7 @@ final class MetricListView: NSView {
     var metrics: [Metric] = [] { didSet { if metrics != oldValue { needsDisplay = true } } }
     var sample = Sample() { didSet { if sample != oldValue { needsDisplay = true } } }
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.staticText)
-        setAccessibilityLabel("More metrics")
-    }
-
-    required init?(coder: NSCoder) { nil }
-
-    override var isFlipped: Bool { true }
+    convenience init() { self.init(label: "More metrics") }
 
     /// Numbers carry a smaller unit, like the tiles and tray; a missing value is a dim dash.
     static func valueText(_ text: String) -> NSAttributedString {
@@ -251,13 +248,9 @@ final class TextButton: NSButton {
 
     override func draw(_ dirtyRect: NSRect) {
         let color = hovering || isHighlighted ? IslandStyle.primary : IslandStyle.secondary
-        if let symbol, let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
-                .applying(NSImage.SymbolConfiguration(paletteColors: [color]))) {
-            let size = image.size
-            image.draw(in: NSRect(x: bounds.maxX - size.width, y: ((bounds.height - size.height) / 2).rounded(),
-                                  width: size.width, height: size.height),
-                       from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        if let symbol {
+            IslandStyle.drawSymbol(symbol, NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+                .applying(NSImage.SymbolConfiguration(paletteColors: [color])), x: bounds.maxX, in: bounds, alignRight: true)
             return
         }
         IslandStyle.drawCentered(IslandStyle.text(title, IslandStyle.footer, color), x: bounds.maxX, in: bounds, alignRight: true)
@@ -283,8 +276,8 @@ final class IslandContentView: NSView {
     private(set) var metricLayout = MetricLayout()
     private var sample = Sample()
     let tiles = MetricLayout.standardTop.map { MetricView(metric: $0) }
-    let network = NetworkView(frame: .zero)
-    let list = MetricListView(frame: .zero)
+    let network = NetworkView()
+    let list = MetricListView()
     let customizeButton = TextButton(label: "Settings", symbol: "gearshape")
     let quitButton = TextButton(label: "Quit")
     private var notchAvailable = false
