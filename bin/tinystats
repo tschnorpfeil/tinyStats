@@ -7,7 +7,11 @@ task_app="$task_apps/tinyStats.app"
 task_exe="$task_app/Contents/MacOS/tinyStats"
 owned_pids() {
     ps -ax -o pid= -o comm= | while read -r task_pid task_comm; do
-        [ "$task_comm" != "$task_exe" ] || printf '%s\n' "$task_pid"
+        case "$task_comm" in
+            "$task_exe") printf '%s\n' "$task_pid" ;;
+            # Homebrew: a copy still running from a keg replaced by brew upgrade.
+            "${TINYSTATS_KEGS:-/nonexistent}"/*/tinyStats.app/Contents/MacOS/tinyStats) printf '%s\n' "$task_pid" ;;
+        esac
     done
 }
 case "${1:-start}" in
@@ -27,6 +31,20 @@ case "${1:-start}" in
         cat "$task_app/Contents/Resources/version.txt"
         ;;
     update)
+        if [ -n "${TINYSTATS_KEGS:-}" ]; then
+            brew upgrade tinystats
+            task_pids=$(owned_pids)
+            for task_pid in $task_pids; do kill -TERM "$task_pid" 2>/dev/null || true; done
+            for task_pid in $task_pids; do
+                task_tries=0
+                while kill -0 "$task_pid" 2>/dev/null; do
+                    task_tries=$((task_tries + 1))
+                    [ "$task_tries" -le 50 ] || { echo 'App did not quit; restart it with: tinystats stop && tinystats' >&2; exit 1; }
+                    sleep 0.1
+                done
+            done
+            exec "$(brew --prefix)/bin/tinystats" start
+        fi
         [ -d "$task_data/source/.git" ] || { echo 'Managed source checkout is missing. Please reinstall.' >&2; exit 1; }
         exec "$task_data/source/install.sh" --update
         ;;
