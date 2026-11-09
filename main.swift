@@ -961,8 +961,8 @@ struct IslandLayout: Equatable {
 
 // MARK: - Motion
 
-/// Pure functions of the presentation progress (0 closed, 1 open, small
-/// overshoot allowed). Drawing, reversals and render checks share them.
+/// Pure functions of the presentation progress (0 closed, 1 open; the
+/// spring keeps it inside that range). Drawing, reversals and render checks share them.
 enum Choreography {
     /// Width leads height slightly, so the shape first spreads, then drops.
     static func widthProgress(_ p: CGFloat) -> CGFloat {
@@ -985,15 +985,25 @@ enum Choreography {
     }
 }
 
-/// Damped spring on the progress. Retargeting keeps value and velocity, so a
-/// reversal continues from wherever the shape is.
+/// Critically damped spring on the progress (Apple's `duration`/`bounce`
+/// model with bounce 0, i.e. `.smooth(duration:)`): it eases out without any
+/// overshoot or rebound, and the value is clamped to 0...1 as a hard guard.
+/// Retargeting keeps value and velocity, so a reversal continues from
+/// wherever the shape is.
 struct Spring {
     struct Parameters: Equatable {
+        /// Perceptual duration: one undamped period, 2π / ω.
         var response: Double
+        /// Damping ratio ζ; 1 is critical damping, the fastest motion that
+        /// never overshoots.
         var damping: Double
     }
-    static let opening = Parameters(response: 0.5, damping: 0.85)
-    static let closing = Parameters(response: 0.34, damping: 1)
+    // From rest, critical damping reaches 95 % after 0.755 × response and
+    // settles below half a per-mille after 1.47 × response. Opening: 95 % at
+    // ~240 ms; closing is quicker: 95 % at ~180 ms. The choreography fades the
+    // content in over the last part of opening and out first when closing.
+    static let opening = Parameters(response: 0.32, damping: 1)
+    static let closing = Parameters(response: 0.24, damping: 1)
 
     private(set) var value: Double = 0
     private(set) var velocity: Double = 0
@@ -1023,9 +1033,15 @@ struct Spring {
             let step = min(1.0 / 480, remaining)
             velocity += (-stiffness * (value - target) - friction * velocity) * step
             value += velocity * step
+            // Hard guard against any overshoot, including fast double reversals.
+            if value < 0 || value > 1 {
+                value = min(max(value, 0), 1)
+                velocity = 0
+            }
             remaining -= step
         }
-        if abs(value - target) < 0.0005, abs(velocity) < 0.01 {
+        // Snap once the remainder is below a third of a point on the widest panel.
+        if abs(value - target) < 0.001, abs(velocity) < 0.05 {
             value = target
             velocity = 0
         }
