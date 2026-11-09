@@ -153,7 +153,10 @@ final class StatusViewController: NSViewController {
     private let ramValue = NSTextField(labelWithString: "—")
     private let downValue = NSTextField(labelWithString: "—")
     private let upValue = NSTextField(labelWithString: "—")
+    let notchToggle = NSButton(checkboxWithTitle: "An Notch anzeigen", target: nil, action: nil)
+    private var contentStack: NSStackView?
     var onQuit: (() -> Void)?
+    var onNotchToggle: ((Bool) -> Void)?
 
     override func loadView() {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 280))
@@ -218,7 +221,11 @@ final class StatusViewController: NSViewController {
         footer.orientation = .horizontal
         footer.alignment = .centerY
 
-        let stack = NSStackView(views: [title, rows, separator(), footer])
+        notchToggle.target = self
+        notchToggle.action = #selector(notchToggleClicked)
+        notchToggle.font = .systemFont(ofSize: 12)
+        notchToggle.isHidden = true
+        let stack = NSStackView(views: [title, rows, separator(), notchToggle, footer])
         stack.orientation = .vertical
         stack.alignment = .width
         stack.spacing = 12
@@ -231,10 +238,27 @@ final class StatusViewController: NSViewController {
             stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -14)
         ])
         view = container
-        preferredContentSize = NSSize(width: 300, height: stack.fittingSize.height + 30)
+        contentStack = stack
+        updatePreferredSize()
+    }
+
+    private func updatePreferredSize() {
+        guard let contentStack else { return }
+        preferredContentSize = NSSize(width: 300, height: contentStack.fittingSize.height + 30)
     }
 
     @objc private func quitClicked() { onQuit?() }
+    @objc private func notchToggleClicked() { onNotchToggle?(notchToggle.state == .on) }
+
+    /// Shows the notch checkbox only while the primary display has a usable notch.
+    func setNotchOption(available: Bool, enabled: Bool) {
+        loadViewIfNeeded()
+        notchToggle.state = enabled ? .on : .off
+        notchToggle.isEnabled = available
+        guard notchToggle.isHidden == available else { return }
+        notchToggle.isHidden = !available
+        updatePreferredSize()
+    }
 
     func updateMetrics(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?) {
         loadViewIfNeeded()
@@ -337,27 +361,167 @@ enum MenuBarIndicators {
     }
 }
 
+// MARK: - Notch overlay
+
+enum NotchGeometry {
+    static let horizontalPadding: CGFloat = 10
+    static let cornerRadius: CGFloat = 8
+    static let contentSize = MenuBarIndicators.size
+    static let overlayWidth = contentSize.width + 2 * horizontalPadding
+    private static let tolerance: CGFloat = 0.5
+
+    /// Overlay frame flush with the notch's right edge, in the same global
+    /// coordinates as `screenFrame`. `rightArea` is `NSScreen.auxiliaryTopRightArea`
+    /// and `topInset` is `safeAreaInsets.top`. Returns nil without a notch, when
+    /// the area is not at the top edge of this screen, or when it is too small.
+    /// The area is only unobscured by the notch; other status items may still
+    /// occupy it.
+    static func overlayFrame(screenFrame: NSRect, rightArea: NSRect?, topInset: CGFloat) -> NSRect? {
+        guard let rightArea, !rightArea.isEmpty, !screenFrame.isEmpty,
+              topInset.isFinite, topInset >= contentSize.height,
+              rightArea.width >= overlayWidth,
+              abs(rightArea.maxY - screenFrame.maxY) <= tolerance,
+              rightArea.minX > screenFrame.minX + tolerance,
+              rightArea.maxX <= screenFrame.maxX + tolerance else { return nil }
+        return NSRect(x: rightArea.minX, y: screenFrame.maxY - topInset,
+                      width: overlayWidth, height: topInset)
+    }
+
+    /// Straight left edge at the notch; only the two right outer corners are rounded.
+    static func shapePath(in rect: NSRect, radius: CGFloat = cornerRadius) -> NSBezierPath {
+        let r = max(0, min(radius, rect.width / 2, rect.height / 2))
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: rect.minX, y: rect.minY))
+        path.line(to: NSPoint(x: rect.maxX - r, y: rect.minY))
+        path.appendArc(withCenter: NSPoint(x: rect.maxX - r, y: rect.minY + r), radius: r, startAngle: 270, endAngle: 360)
+        path.line(to: NSPoint(x: rect.maxX, y: rect.maxY - r))
+        path.appendArc(withCenter: NSPoint(x: rect.maxX - r, y: rect.maxY - r), radius: r, startAngle: 0, endAngle: 90)
+        path.line(to: NSPoint(x: rect.minX, y: rect.maxY))
+        path.close()
+        return path
+    }
+
+    static func contentRect(in bounds: NSRect) -> NSRect {
+        NSRect(x: bounds.minX + horizontalPadding,
+               y: bounds.minY + ((bounds.height - contentSize.height) / 2).rounded(),
+               width: contentSize.width, height: contentSize.height)
+    }
+}
+
+/// Draws the existing template indicator white on a black notch extension.
+final class NotchOverlayView: NSView {
+    var indicator: NSImage? { didSet { needsDisplay = true } }
+    var onClick: (() -> Void)?
+
+    override var isOpaque: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { onClick?() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.black.setFill()
+        NotchGeometry.shapePath(in: bounds).fill()
+        guard let indicator, let context = NSGraphicsContext.current else { return }
+        let target = NotchGeometry.contentRect(in: bounds)
+        context.saveGraphicsState()
+        // Tint the template: keep its alpha, replace its color with white.
+        context.cgContext.beginTransparencyLayer(in: target, auxiliaryInfo: nil)
+        indicator.draw(in: target)
+        NSColor.white.setFill()
+        target.fill(using: .sourceAtop)
+        context.cgContext.endTransparencyLayer()
+        context.restoreGraphicsState()
+    }
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityPerformPress() -> Bool { onClick?(); return true }
+}
+
+final class NotchOverlayPanel: NSPanel {
+    convenience init() {
+        self.init(contentRect: NSRect(x: 0, y: 0, width: NotchGeometry.overlayWidth, height: 32),
+                  styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        level = .statusBar
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+        isMovable = false
+        animationBehavior = .none
+        becomesKeyOnlyIfNeeded = true
+        contentView = NotchOverlayView(frame: NSRect(x: 0, y: 0, width: NotchGeometry.overlayWidth, height: 32))
+    }
+
+    var overlayView: NotchOverlayView { contentView as! NotchOverlayView }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+    // Keep the frame at the top edge beside the notch instead of below the menu bar.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+}
+
 // MARK: - App
 
-final class App: NSObject, NSApplicationDelegate {
+final class App: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+    static let notchDefaultsKey = "showAtNotch"
     let status = NSStatusBar.system.statusItem(withLength: MenuBarIndicators.size.width + 8)
     let metrics = Metrics()
     let popover = NSPopover()
     let vc = StatusViewController()
     private var timer: Timer?
+    private lazy var panel = NotchOverlayPanel()
+    private var overlayActive = false
+    private var lastPopoverClose: TimeInterval = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let button = status.button else { return }
+        UserDefaults.standard.register(defaults: [Self.notchDefaultsKey: true])
         button.setAccessibilityLabel("Systemstatus")
         button.target = self
         button.action = #selector(togglePopover)
         vc.onQuit = { NSApp.terminate(nil) }
+        vc.onNotchToggle = { [weak self] enabled in
+            UserDefaults.standard.set(enabled, forKey: Self.notchDefaultsKey)
+            self?.updatePlacement()
+        }
         popover.contentViewController = vc
         popover.behavior = .transient
+        popover.delegate = self
+        panel.overlayView.setAccessibilityLabel("Systemstatus")
+        panel.overlayView.onClick = { [weak self] in self?.togglePopover() }
+        NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
+                                               name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        updatePlacement()
         sample()
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.sample() }
         self.timer = timer
         RunLoop.main.add(timer, forMode: .common)
+    }
+
+    @objc private func screensChanged(_ notification: Notification) { updatePlacement() }
+
+    /// Re-evaluates the primary display (first screen, carrying the menu bar).
+    private func updatePlacement() {
+        let frame = NSScreen.screens.first.flatMap {
+            NotchGeometry.overlayFrame(screenFrame: $0.frame, rightArea: $0.auxiliaryTopRightArea,
+                                       topInset: $0.safeAreaInsets.top)
+        }
+        let enabled = UserDefaults.standard.bool(forKey: Self.notchDefaultsKey)
+        vc.setNotchOption(available: frame != nil, enabled: enabled)
+        let target = enabled ? frame : nil
+        if (target != nil) != overlayActive, popover.isShown {
+            popover.performClose(nil)
+        }
+        overlayActive = target != nil
+        if let target {
+            panel.setFrame(target, display: true)
+            panel.orderFrontRegardless()
+            status.isVisible = false
+        } else {
+            panel.orderOut(nil)
+            status.isVisible = true
+        }
     }
 
     private func sample() {
@@ -368,18 +532,29 @@ final class App: NSObject, NSApplicationDelegate {
         vc.updateMetrics(cpu: cpu, gpu: gpu, ram: ram, net: rates)
         let description = "CPU \(StatusViewController.percent(cpu)) · GPU \(StatusViewController.percent(gpu)) · RAM geschätzt \(StatusViewController.percent(ram)) · Download \(StatusViewController.formatRate(rates?.downloadBytesPerSecond)) · Upload \(StatusViewController.formatRate(rates?.uploadBytesPerSecond))"
             .replacingOccurrences(of: "—", with: "Nicht verfügbar")
-        status.button?.image = MenuBarIndicators.image(cpu: cpu, gpu: gpu, ram: ram, net: rates)
+        let image = MenuBarIndicators.image(cpu: cpu, gpu: gpu, ram: ram, net: rates)
+        status.button?.image = image
         status.button?.toolTip = description
         status.button?.setAccessibilityValue(description)
+        panel.overlayView.indicator = image
+        panel.overlayView.toolTip = description
+        panel.overlayView.setAccessibilityValue(description)
+    }
+
+    func popoverWillClose(_ notification: Notification) {
+        lastPopoverClose = ProcessInfo.processInfo.systemUptime
     }
 
     @objc func togglePopover() {
-        guard let button = status.button else { return }
+        let anchor: NSView? = overlayActive ? panel.overlayView : status.button
+        guard let anchor else { return }
         if popover.isShown {
-            popover.performClose(button)
+            popover.performClose(anchor)
         } else {
+            // A click on the overlay first closes the transient popover; don't reopen it.
+            if overlayActive, ProcessInfo.processInfo.systemUptime - lastPopoverClose < 0.3 { return }
             NSApp.activate(ignoringOtherApps: true)
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
     }
