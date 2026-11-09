@@ -20,10 +20,10 @@ Requires macOS 14+. With [Homebrew](https://brew.sh):
 
 ```sh
 brew tap tschnorpfeil/tinystats https://github.com/tschnorpfeil/tinyStats
-brew install tinystats
+brew install tschnorpfeil/tinystats/tinystats
 ```
 
-Homebrew builds the app on your Mac, so no signed download is needed. Without Homebrew, install Xcode Command Line Tools (`xcode-select --install`) and run:
+Homebrew builds the app on your Mac, so no signed download is needed. The full name `tschnorpfeil/tinystats/tinystats` also marks the formula as trusted, which Homebrew requires for third-party taps. Without Homebrew, install Xcode Command Line Tools (`xcode-select --install`) and run:
 
 ```sh
 git clone https://github.com/tschnorpfeil/tinyStats.git && ./tinyStats/install.sh
