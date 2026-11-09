@@ -7,7 +7,7 @@ brew tap tschnorpfeil/tinystats https://github.com/tschnorpfeil/tinyStats
 brew install tschnorpfeil/tinystats/tinystats
 ```
 
-The full formula name marks it as trusted, which Homebrew requires for third-party taps. The app lives in Homebrew's Cellar and `tinystats` is linked into Homebrew's `bin`. `tinystats update` runs `brew upgrade tinystats` and restarts the app. After a plain `brew upgrade`, run `tinystats stop && tinystats` to switch to the new version. Remove with `tinystats stop && brew uninstall tinystats && brew untap tschnorpfeil/tinystats`.
+The full formula name marks it as trusted, which Homebrew requires for third-party taps. The app lives in Homebrew's Cellar and `tinystats` is linked into Homebrew's `bin`. `tinystats update` runs `brew upgrade tschnorpfeil/tinystats/tinystats` and restarts the app. After a plain `brew upgrade`, run `tinystats stop && tinystats` to switch to the new version. Remove with `tinystats stop && brew uninstall tinystats && brew untap tschnorpfeil/tinystats`.
 
 Coming from the Git installer? Remove that installation first (see Remove below), otherwise `~/.local/bin/tinystats` shadows the Homebrew command.
 
@@ -30,7 +30,7 @@ You no longer need the original download folder. If needed, the installer adds `
 ```sh
 tinystats          # start
 tinystats status   # check whether the installed app is running
-tinystats stop     # quit the installed app
+tinystats stop     # quit the installed app and wait until it has
 tinystats version  # commit of the installed app
 tinystats update   # fetch main, build, install and restart
 ```
