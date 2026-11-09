@@ -179,8 +179,8 @@ enum Format {
     }
 
     static func summary(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?) -> String {
-        "CPU \(percent(cpu)) · GPU \(percent(gpu)) · RAM geschätzt \(percent(ram)) · Upload \(rate(net?.uploadBytesPerSecond)) · Download \(rate(net?.downloadBytesPerSecond))"
-            .replacingOccurrences(of: "—", with: "Nicht verfügbar")
+        "CPU \(percent(cpu)) · GPU \(percent(gpu)) · RAM estimated \(percent(ram)) · Upload \(rate(net?.uploadBytesPerSecond)) · Download \(rate(net?.downloadBytesPerSecond))"
+            .replacingOccurrences(of: "—", with: "Not available")
     }
 }
 
@@ -686,7 +686,7 @@ final class MetricView: NSView {
     required init?(coder: NSCoder) { nil }
 
     override var isFlipped: Bool { true }
-    override func accessibilityValue() -> Any? { Format.percent(value).replacingOccurrences(of: "—", with: "Nicht verfügbar") }
+    override func accessibilityValue() -> Any? { Format.percent(value).replacingOccurrences(of: "—", with: "Not available") }
 
     override func draw(_ dirtyRect: NSRect) {
         IslandStyle.text(caption, IslandStyle.caption, IslandStyle.secondary, kern: 0.4).draw(at: NSPoint(x: 0, y: 0))
@@ -728,7 +728,7 @@ final class NetworkView: NSView {
         super.init(frame: frame)
         setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
-        setAccessibilityLabel("Netzwerk")
+        setAccessibilityLabel("Network")
     }
 
     required init?(coder: NSCoder) { nil }
@@ -742,7 +742,7 @@ final class NetworkView: NSView {
 
     override func accessibilityValue() -> Any? {
         Self.entries(rates).map { "\($0.name) \(Format.rate($0.value))" }.joined(separator: ", ")
-            .replacingOccurrences(of: "—", with: "nicht verfügbar")
+            .replacingOccurrences(of: "—", with: "not available")
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -776,7 +776,7 @@ final class MonoSwitch: NSButton {
         isBordered = false
         focusRingType = .none
         setAccessibilityRole(.checkBox)
-        setAccessibilityLabel("An Notch anzeigen")
+        setAccessibilityLabel("Show beside notch")
     }
 
     override func accessibilityValue() -> Any? { state == .on ? 1 : 0 }
@@ -837,10 +837,10 @@ final class IslandContentView: NSView {
 
     let cpu = MetricView(caption: "CPU", name: "CPU")
     let gpu = MetricView(caption: "GPU", name: "GPU")
-    let ram = MetricView(caption: "RAM ≈", name: "RAM geschätzt")
+    let ram = MetricView(caption: "RAM ≈", name: "RAM estimated")
     let network = NetworkView(frame: .zero)
     let notchSwitch = MonoSwitch(label: "Notch")
-    let quitButton = TextButton(label: "Beenden")
+    let quitButton = TextButton(label: "Quit")
     var onQuit: (() -> Void)?
     var onNotchToggle: ((Bool) -> Void)?
 
@@ -848,14 +848,14 @@ final class IslandContentView: NSView {
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: Self.height))
         wantsLayer = true
         canDrawSubviewsIntoLayer = true
-        ram.toolTip = "Geschätzte Belegung: aktive, verdrahtete und komprimierte Speicherseiten. Kein Speicherdruck."
+        ram.toolTip = "Estimated usage: active, wired and compressed memory pages. Not memory pressure."
         notchSwitch.target = self
         notchSwitch.action = #selector(notchToggled)
         notchSwitch.isHidden = true
         quitButton.target = self
         quitButton.action = #selector(quitClicked)
-        quitButton.setAccessibilityLabel("tinyStats beenden")
-        quitButton.toolTip = "tinyStats beenden (⌘Q)"
+        quitButton.setAccessibilityLabel("Quit tinyStats")
+        quitButton.toolTip = "Quit tinyStats (⌘Q)"
         [cpu, gpu, ram, network, notchSwitch, quitButton].forEach(addSubview)
         layout(width: width)
     }
@@ -1388,7 +1388,7 @@ final class App: NSObject, NSApplicationDelegate {
 
 let app = NSApplication.shared
 if let running = SingleInstance.runningInstance() {
-    FileHandle.standardError.write(Data("tinyStats läuft bereits (PID \(running)).\n".utf8))
+    FileHandle.standardError.write(Data("tinyStats is already running (PID \(running)).\n".utf8))
     exit(0)
 }
 let delegate = App()

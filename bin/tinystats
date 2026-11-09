@@ -12,7 +12,7 @@ owned_pids() {
 }
 case "${1:-start}" in
     start)
-        [ -d "$task_app" ] || { echo 'tinyStats fehlt. Bitte install.sh ausführen.' >&2; exit 1; }
+        [ -d "$task_app" ] || { echo 'tinyStats is missing. Run install.sh.' >&2; exit 1; }
         if [ -z "$(owned_pids)" ]; then open "$task_app"; fi
         ;;
     stop)
@@ -20,18 +20,18 @@ case "${1:-start}" in
         ;;
     status)
         task_pids=$(owned_pids)
-        if [ -n "$task_pids" ]; then printf 'tinyStats läuft (PID %s).\n' "$task_pids"; else echo 'tinyStats ist beendet.'; fi
+        if [ -n "$task_pids" ]; then printf 'tinyStats is running (PID %s).\n' "$task_pids"; else echo 'tinyStats is not running.'; fi
         ;;
     version|--version|-v)
-        [ -f "$task_app/Contents/Resources/version.txt" ] || { echo 'Versionsnachweis fehlt; tinystats update ausführen.' >&2; exit 1; }
+        [ -f "$task_app/Contents/Resources/version.txt" ] || { echo 'Version metadata is missing; run tinystats update.' >&2; exit 1; }
         cat "$task_app/Contents/Resources/version.txt"
         ;;
     update)
-        [ -d "$task_data/source/.git" ] || { echo 'Verwalteter Quellcode fehlt. Bitte erneut installieren.' >&2; exit 1; }
+        [ -d "$task_data/source/.git" ] || { echo 'Managed source checkout is missing. Please reinstall.' >&2; exit 1; }
         exec "$task_data/source/install.sh" --update
         ;;
     help|--help|-h)
         echo 'tinystats [start|stop|status|version|update]'
         ;;
-    *) echo 'Unbekannter Befehl. tinystats help' >&2; exit 2 ;;
+    *) echo 'Unknown command. Run tinystats help' >&2; exit 2 ;;
 esac

@@ -1,40 +1,40 @@
 # tinyStats
 
-CPU, GPU, RAM und Netzwerk direkt neben der MacBook-Notch. Ohne Notch in der Menüleiste. Ein Klick öffnet die Details.
+CPU, GPU, RAM and network activity beside your MacBook's notch. On displays without a notch, it lives in the menu bar. Click to open the details.
 
-<img src="docs/images/notch-collapsed.png" alt="tinyStats eingeklappt neben der Notch" width="480">
+<img src="docs/images/notch-collapsed.png" alt="tinyStats collapsed beside the notch" width="480">
 
-| Mit Notch | Ohne Notch |
+| With a notch | Without a notch |
 | :---: | :---: |
-| ![tinyStats neben der Notch mit geöffneten Details](docs/images/notch.png) | ![tinyStats in der Menüleiste mit geöffneter Karte](docs/images/menu-bar.png) |
+| ![tinyStats beside the notch with details open](docs/images/notch.png) | ![tinyStats in the menu bar with details open](docs/images/menu-bar.png) |
 
-*Native Renderings mit Beispielwerten.*
+*Native renderings with sample values.*
 
-Die drei Balken zeigen von links nach rechts CPU, GPU und RAM. Daneben: Upload ↑ und Download ↓. RAM ist eine Schätzung; GPU-Werte sind nicht auf jeder Hardware verfügbar.
+The three bars show CPU, GPU and RAM, from left to right. Upload ↑ and download ↓ sit alongside them. RAM usage is an estimate; GPU readings aren't available on all hardware.
 
-## Installieren
+## Install
 
-macOS 14+ und Xcode Command Line Tools (`xcode-select --install`).
+Requires macOS 14+ and Xcode Command Line Tools (`xcode-select --install`).
 
 ```sh
 git clone https://github.com/tschnorpfeil/tinyStats.git && ./tinyStats/install.sh
 ```
 
-Danach ein neues Terminal öffnen:
+Then open a new terminal:
 
 ```sh
-tinystats          # starten
-tinystats stop     # beenden
-tinystats update   # aktualisieren
-tinystats status   # läuft die App?
-tinystats version  # installierte Version
+tinystats          # start
+tinystats stop     # quit
+tinystats update   # update
+tinystats status   # check whether the app is running
+tinystats version  # installed version
 ```
 
-Kein Autostart. Kein Dock-Symbol. Falls die Anzeige andere Menüs verdeckt, in den Details „Notch“ ausschalten.
+No automatic startup. No Dock icon. If the widget covers other menus, turn off “Notch” in the details.
 
-[Installation, Fehlerhilfe und Deinstallation](INSTALL.md)
+[Installation, troubleshooting and removal](INSTALL.md)
 
-## Entwickeln
+## Develop
 
 ```sh
 ./build.sh

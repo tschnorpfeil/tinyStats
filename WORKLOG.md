@@ -1,192 +1,109 @@
-# Systemstatus Fertigstellung
+# System status completion
 
-## Umfang
+## Scope
 
-Basis für den lokalen Review: fc06bc60f621913f55f99920729bad2faf6e0b77.
-Der bereits begonnene Symbol-Umbau in main.swift gehört zur Aufgabe und
-wird erhalten. Kein Remote vorhanden, kein Push oder PR vorgesehen.
-Review-Diff in allen Runden: `git diff fc06bc60f621913f55f99920729bad2faf6e0b77 -- main.swift .gitignore README.md build.sh Tests WORKLOG.md`, dazu untracked Dateien lesen.
+Local review base: fc06bc60f621913f55f99920729bad2faf6e0b77.
+The in-progress symbol changes in main.swift belong to this task and are preserved.
+At this stage there was no remote, and no push or PR was planned.
+Review command for all rounds: `git diff fc06bc60f621913f55f99920729bad2faf6e0b77 -- main.swift .gitignore README.md build.sh Tests WORKLOG.md`, plus untracked files.
 
-## Aufgaben
+## Tasks
 
-- [x] Istzustand und uncommittierten Symbol-Umbau prüfen
-- [x] Netzwerk-Baseline nach erfolgreicher Probe aktualisieren
-- [x] CPU/RAM bei fehlenden Daten optional darstellen
-- [x] Popover mit Systemsymbolen, Trennlinien, kleiner Beenden-Aktion gestalten
-- [x] Regressionstest und Formatierungs-/Konstruktionschecks ausführen
-- [x] Eigenständiges App-Bundle bauen und Plist prüfen
-- [x] Neue Version starten (Systemstatus.app, PID 90040 vor finalem Neubau)
-- [x] Layout-Geometrie per nativer Offscreen-Konstruktion prüfen (300 × 260 pt)
-- [x] Sol-Review abschließen
-- [x] Finale Version bauen und neu starten
-- [x] Abschlussstand lokal zum Commit vorbereiten
+- [x] Inspect the current state and uncommitted symbol changes
+- [x] Update the network baseline after successful samples
+- [x] Make CPU/RAM values optional when data is missing
+- [x] Design the popover with system symbols, separators and a small quit action
+- [x] Run regression, formatting and construction checks
+- [x] Build a standalone app bundle and validate its plist
+- [x] Launch the new version (Systemstatus.app, PID 90040 before the final rebuild)
+- [x] Verify layout geometry with native offscreen construction (300 × 260 pt)
+- [x] Complete Sol review
+- [x] Build and restart the final version
+- [x] Prepare the final state for a local commit
 
-## Prüfungen und Grenzen
+## Validation and limitations
 
-Swift-Typprüfung, kompilierte Checks und Build erfolgreich. Native
-Offscreen-Konstruktion bestätigt die Geometrie; sie ersetzt keinen Test
-von Klick, Escape, Außenklick oder der Live-Darstellung im Popover.
-Computer Use kann das Bundle nicht auswählen (timeoutReached); das lose
-Binary ist kein gültiges App-Ziel. Daher keine behauptete Live-UI-Prüfung.
-Auf Wunsch des Nutzers darf die alte Instanz ohne Binary-Sicherung ersetzt
-werden. Keine Systemeinstellungen oder Autostart-Einträge angelegt.
+Swift typecheck, compiled checks and build passed. Native offscreen construction confirms geometry but does not prove click, Escape, outside-click or live popover behavior. Computer Use could not select the bundle (timeoutReached); the standalone binary was not a valid app target. No live UI verification claimed. The user authorized replacing the old instance without backing up its binary. No system settings or startup entries were created.
 
-## Sol Ledger
+## Sol ledger
 
-Budget: maximal 3 Runden. Modell aus Capabilities: codex / gpt-6.1-sol.
-Runde 1: APPROVE, keine blocker/should/nit-Findings. Keine Review-Fixes
-notwendig, keine Findings abgelehnt. Modell gpt-6.1-sol, Effort medium
-laut Tool-Metadaten. Usage nicht zurückgegeben. Kein Push.
-Nach dem Review nur dieses Arbeitsprotokoll aktualisiert; Verhaltens-Diff
-unverändert. Finale Typprüfung, Checks, optimierter Build und Plist-Lint
-bestanden. Genau eine finale App-Instanz bestätigt, Startlog leer.
-Diff vor Review: 3 tracked Dateien, 175 Einfügungen / 247 Löschungen;
-neue Build-/Test-/Arbeitsdateien zusätzlich, vor Round 1 separat erfasst.
+Budget: at most 3 rounds. Model from capabilities: codex / gpt-6.1-sol.
+Round 1: APPROVE, no blocker, should or nit findings. No review fixes or declined findings. Model gpt-6.1-sol, medium effort per tool metadata. Usage not returned. No push.
+Only this log changed after review; behavior diff stayed unchanged. Final typecheck, checks, optimized build and plist lint passed. Exactly one final app instance confirmed; startup log empty.
+Pre-review diff: 3 tracked files, +175/-247; new build, test and log files recorded separately before round 1. Review diff stayed unchanged; new files added 106 lines before review, followed by completion notes in this log.
 
-Review-Diff vor/nach der einen Runde unverändert: tracked Code/Dokumentation
-175 Einfügungen / 247 Löschungen; neue Dateien vor Review 106 Zeilen,
-dieses Protokoll danach um Abschlussdaten ergänzt.
+# Direct menu bar indicators
 
-# Direkte Menüleistenindikatoren
+Base: 9e48a65b316ab85b71d19354326dc7b12c1fbe88. No remote.
+Intent: three monochrome fill bars (CPU/GPU/RAM) plus two lines of download/upload rates in a fixed 120 pt menu bar item. Sampling and popover unchanged. No settings or history.
+Review command: `git diff 9e48a65b316ab85b71d19354326dc7b12c1fbe88 -- main.swift Tests/checks.swift README.md WORKLOG.md`.
 
-Basis: 9e48a65b316ab85b71d19354326dc7b12c1fbe88. Kein Remote.
-Intent: drei monochrome Füllbalken (CPU/GPU/RAM) plus zweizeilige
-Download-/Upload-Raten direkt in der Menüleiste, fest 120 pt breit.
-Messlogik und Popover unverändert. Keine Einstellungen oder Historien.
-Review-Diff für alle Runden:
-`git diff 9e48a65b316ab85b71d19354326dc7b12c1fbe88 -- main.swift Tests/checks.swift README.md WORKLOG.md`.
+- [x] Implement indicators and compact byte rates
+- [x] Distinguish missing values from measured zero
+- [x] Include full network rates in tooltip and accessibility values
+- [x] Check types, existing tests, rasterization and text widths
+- [x] Render and inspect the native graphic at menu bar size
+- [x] Complete Sol review (at most 3 rounds)
+- [x] Build, launch and prepare the final version for a local commit
 
-- [x] Indikatoren und kompakte Byte-Raten implementieren
-- [x] Fehlende Werte von gemessener Null unterscheiden
-- [x] Tooltip und Accessibility um vollständige Netzwerkraten ergänzen
-- [x] Typprüfung, bestehende Checks, Rasterisierung und Textbreiten prüfen
-- [x] Native Grafik in Menüleistengröße offscreen rendern und ansehen
-- [x] Sol-Review (maximal 3 Runden) abschließen
-- [x] Finale Version bauen, starten und für lokalen Commit vorbereiten
+Graphic: 108 × 22 pt plus 12 pt button padding. Three 7 × 16 pt bars, without tiny unreadable letters. Empty track for zero, dash for missing data. Decimal B/K/M/G per second; ≥1T from 1 TB/s. No normalization against connection capacity. Live click test still pending after the earlier Computer Use timeout.
 
-Grafik: 108 × 22 pt, 12 pt zusätzliche Button-Ränder. Drei 7 × 16 pt
-Balken; darunter keine unlesbaren Buchstaben. Leere Spur für Null,
-Strich für fehlende Messung. Netzwerk dezimal B/K/M/G pro Sekunde;
-ab 1 TB/s kompakt ≥1T. Keine Normierung auf Leitungskapazität.
-Live-Klicktest weiterhin nicht ausgeführt (Computer Use zuvor Timeout).
+## Indicator review ledger
 
-## Sol Ledger Indikatoren
+Round 1: APPROVE, codex / gpt-6.1-sol, medium effort. No findings, fixes or declined findings. Usage not returned. No push. Reviewer ran typecheck and diff-check. Only completion notes added afterward. Behavior diff unchanged: 3 files, +98/-9 excluding this log.
+Final checks and build passed. Exactly one instance (PID 92757), empty startup log at /tmp/hsb-systemstatus-indicators.log. Live click test remained open.
 
-Runde 1: APPROVE. Modell: codex / gpt-6.1-sol, Effort medium.
-Keine Findings, keine Review-Fixes, keine abgelehnten Findings.
-Usage nicht zurückgegeben. Kein Push. Reviewer führte Typprüfung und
-Diff-Check selbst aus. Nach Review nur Abschlussprotokoll ergänzt.
-Verhaltens-Diff unverändert: +98 / -9 Zeilen ohne Arbeitsprotokoll.
-Diff vor Review ohne Protokoll: 3 Dateien, +98 / -9 Zeilen.
+# Menu bar design council
 
-Finale Checks und Build bestanden. Genau eine App-Instanz (PID 92757)
-läuft, Startlog leer: /tmp/hsb-systemstatus-indicators.log. Live-Klicktest bleibt offen.
+Trigger: user screenshot showed wasted horizontal space and indistinguishable CPU/GPU/RAM bars. Explore replacements before changing the renderer. Base db78c68; clean working tree.
 
-# Council Designrunde Menüleiste
+- [x] Resolve requested models: Opus 5.5, Gemini 4 Argon, GPT 6.1 Sol
+- [x] Read and combine three independent proposals
+- [x] Implement and check a compact, distinguishable design
+- [x] Submit the implementation to the council
+- [x] Evaluate results and save locally
+- [ ] Launch superseded by the user's notch-integration idea
 
-Auslöser: Screenshot des Nutzers zeigt verschwendeten Horizontalraum und
-nicht unterscheidbare CPU-/GPU-/RAM-Balken. Exploration eines Ersatzdesigns,
-daher vor der Designrunde keine Änderungen am zu ersetzenden Renderer.
-Basis db78c68. Arbeitsbaum vor Beginn sauber.
+Council was read-only, all three models at high reasoning. No PR/CI.
 
-- [x] Gewünschte Modelle auflösen: Opus 5.5, Gemini 4 Argon, GPT 6.1 Sol
-- [x] Drei unabhängige Designvorschläge lesen und zusammenführen
-- [x] Kompaktes, unterscheidbares Design umsetzen und prüfen
-- [x] Umsetzung dem Council erneut vorlegen
-- [x] Council-Ergebnis bewerten und Stand lokal sichern
-- [ ] Start durch neue Nutzeridee Notch-Integration abgelöst
+## Council results and implementation
 
-Council arbeitet lesend. Alle drei Modelle mit high reasoning. Keine PR/CI.
-
-## Council Runde 1 Ergebnisse und Umsetzung
-
-| Modell | Ist-Design Runde 1 | Umsetzung Runde 2 |
+| Model | Initial design | Implementation |
 | --- | --- | --- |
 | Opus 5.5 | 5/10 | 8/10 SATISFIED |
 | Gemini 4 Argon | 4/10 | 9/10 SATISFIED |
 | GPT 6.1 Sol | 4/10 | 9/10 SATISFIED |
 
-Gemeinsame Diagnose: gleiche Balken nicht zuordenbar; ~42 pt Loch bei 1K.
-Opus: C/G/R neben Balken, ca.100pt. Gemini: kleine Monogramme unter Balken,
-86pt. Sol: volle CPU/GPU/RAM über Querbalken,110pt. Der Nutzer hat danach
-C/G/R ausdrücklich als ausreichend bestätigt. Daher Opus-Richtung gewählt,
-aber Geometrie anhand echter Fontmessungen statt Schätzung: 88×22pt Bild,
-8pt Button-Ränder, insgesamt96pt. Drei17pt-Spalten,11pt Semibold-Kürzel,
-5×14pt-Füllbalken,36pt Netzwerkblock. ≥2pt Abstand zwischen Pfeil und
-breitester Rate. SF9-Netzwerkschrift: 999M misst tatsächlich26.06pt;
-die früheren Schätzungen von ca.22pt waren zu klein. Tests nun für de_DE
-ausgeführt sowie en_US, jede maximale Zeichenfolge und Fontbreite.
-Keine künstliche Mindestfüllung, keine zusätzliche Warnschwelle, keine
-Farbcodierung; proportionale Werte. Null: leere Spur. Unbekannt: Strich
-statt Spur. Vollständige Namen/Einheiten und „Nicht verfügbar“ im Tooltip
-und Accessibility-Wert. Format-Rundung bei999.5GB/s auf1T korrigiert,
-damit kein fünfstelliges1000G den Netzwerkblock sprengt.
+Shared diagnosis: identical bars lacked labels; about 42 pt of empty space beside 1K. Opus proposed C/G/R beside bars at about 100 pt. Gemini proposed monograms under bars at 86 pt. Sol proposed full CPU/GPU/RAM labels over horizontal bars at 110 pt. The user confirmed C/G/R was sufficient. Chose the Opus direction, measured actual fonts: 88 × 22 pt image, 8 pt button padding, 96 pt total. Three 17 pt columns, 11 pt semibold initials, 5 × 14 pt bars, 36 pt network block. At least 2 pt between arrows and the widest rate. SF 9 text “999M” measures 26.06 pt, more than the earlier 22 pt estimate. Tests cover de_DE and en_US, maximum strings and font widths.
 
-Native Offscreen-Renderings für Runde2:
-/tmp/hsb-council-light.png und /tmp/hsb-council-dark.png.
-Fünf Zustände: Screenshot-Werte, normal,0/niedrig/100%,unbekannt,Maximaltext.
-Renderings visuell geprüft, keine Kollisionen. Native Live-UI weiter offen.
-Checks: Typprüfung,Tests/run.sh,Build,Diff-Check erfolgreich. Keine PR/CI.
+No minimum fill, extra warning threshold or color coding; values remain proportional. Zero uses an empty track; unknown uses a dash instead of a track. Tooltip and accessibility use full names, units and “Not available”. Fixed rounding from 999.5 GB/s to 1T so five-character 1000G cannot overflow.
 
-Alle drei Reviewer SATISFIED; keine Blocker. Opus' Hinweis zum Abstand
-R→Netz als optischen Nit eingeordnet:17→16pt verschlechtert die Abstände
-zwischen den drei Gruppen. Unverändertes geprüftes Layout beibehalten.
-Nutzerwechsel auf Notch-Idee vor dem Neustart. Der96pt-Stand wird als
-Fallback-Basis committet; keine Änderungen gehen verloren.
+Round 2 native offscreen sheets: /tmp/hsb-council-light.png and /tmp/hsb-council-dark.png. Five states: screenshot values, typical, zero/low/100%, unknown, longest text. Inspected visually; no collisions. Native live UI remained unverified. Typecheck, Tests/run.sh, build and diff-check passed. No PR/CI.
+All three reviewers SATISFIED, no blockers. Declined Opus's R-to-network spacing nit: reducing columns from 17 to 16 pt worsens spacing within the three groups. Kept the reviewed layout. User switched to the notch idea before restart; committed the 96 pt version as the fallback base without losing changes.
 
+# Notch prototype
 
-# Notch-Prototyp
+User chose right-adjacent to the real notch, white on black; normal menu bar on a primary display without a notch. Used an explicitly authorized shared Opus 5.5 builder because T3 could not create a cross-project worktree. Base af1f697, builder commit 3548266. Only main.swift and checks changed; parent read the full diff. Sampling unchanged.
 
-Nutzerentscheidung: rechts an echter Notch, weiß auf schwarz; auf primärem
-Display ohne Notch normale Menüleiste. Dirigent-Bau mit explizit erlaubtem
-shared Opus5.5-Builder, weil T3 keinen projektübergreifenden Worktree zuließ.
-Basis af1f697, Buildercommit3548266. Änderungen nur main.swift und Checks,
-kompletten Diff selbst gelesen. Keine Messlogikänderung.
+- [x] Inspect display geometry (1470 × 956, notch edge 824.5, height 32 pt)
+- [x] Build notch overlay and menu bar fallback
+- [x] Add a checkbox to switch back when space conflicts occur
+- [x] Check geometry, shape, color mask, checkbox and build locally
+- [x] Inspect the native offscreen graphic
+- [ ] Verify live launch and interaction
+- [x] Complete Sol review
+- [x] Prepare the final state for a local commit
 
-- [x] Display-Geometrie lesen (1470×956,Notchrand824.5,32pt hoch)
-- [x] Notch-Overlay und Menüleisten-Fallback bauen
-- [x] Checkbox zum Zurückwechseln bei Platzkonflikten
-- [x] Geometrie, Form, Farbmaske, Checkbox und Build lokal prüfen
-- [x] Native Offscreen-Grafik selbst ansehen
-- [ ] Live-Start und Bedienung prüfen
-- [x] Sol-Review abschließen
-- [x] Abschlussstand für lokalen Commit vorbereiten
+Public AppKit APIs, no new permissions. Notch frame on this Mac: (824.5, 924, 108, 32). Monochrome, only right outer corners rounded by 8 pt. Status item hidden in notch mode; nonactivating panel, still one timer. Both modes share the details view and a way back to the menu bar.
+Limitations: space beside the notch is not reserved; no automatic detection of free areas around foreign status items. Primary display determines the mode. Fullscreen, autohide and multiple displays were not live-tested. Tests prove geometry and offscreen rendering, not live interaction.
+Live launch: PID 10896; /tmp/hsb-notch.log empty. Computer Use could capture neither Systemstatus nor Finder windows (cgWindowNotFound). Position, clicks and keyboard remained unverified; a running process is not UI proof.
 
-Öffentliche AppKit-APIs, keine neuen Berechtigungen. Notch-Frame auf diesem
-Mac: (824.5,924,108,32). Mono, nur rechteAußenecken8pt rund. Statusitem
-im Notchmodus unsichtbar, Panel nicht aktivierend, eineTimerquelle bleibt.
-Die Detailansicht ist in beiden Modi identisch und bietet die Rückkehr.
+## Notch review ledger
 
-Grenzen: Platz neben der Notch ist nicht reserviert. Kein automatischer
-Nachweis freier fremder Statusitem-Flächen. Primäres Display bestimmt Modus.
-Vollbild/Autohide/MultiDisplay noch nicht live geprüft. Testausgaben belegen
-Geometrie und Offscreen-Rendering, keine Live-Bedienung.
-
-Live-Start: PID10896,Log /tmp/hsb-notch.log leer. ComputerUse kann weder
-Systemstatus noch Finder-Fenster erfassen: cgWindowNotFound. Daher Live-
-Position,Klicks undTastatur weiter offen; gestarteterProzess ist keinUI-Beleg.
-
-## Sol Ledger Notch
-
-Basis af1f6970139abc700359e38038cd2a10178b0c5e, maximal3Runden.
-Runde1 vorbereitet; gpt-6.1-sol/high. Noch keine Findings. Usage nur falls
-zurückgegeben. GleicherDiff für alleRunden:
-`git diff af1f6970139abc700359e38038cd2a10178b0c5e -- main.swift Tests/checks.swift README.md WORKLOG.md`.
-
-Sol-Notch-Runde1: APPROVE, gpt-6.1-sol/high. Keine blocker/should.
-S1 nit:300ms-Sperre kann sehr schnelle eigenständigeWiederöffnungsversuche
-nachEscape/Außenklick unterdrücken. FürPrototyp zurückgestellt; seltene
-Schnellklickfolge,kein belegterFehler im normalenÖffnungspfad. Ereignisgenaue
-Unterdrückung alsFollow-up vormerken,nicht ohneLive-Reproduktion umbauen.
-KeineReview-Codeänderung,keinezweiteRunde nötig. Usage nicht zurückgegeben.
-Review-Diff vor/nach unverändert:+330/-8 über4Dateien; nur diesesProtokoll
-wird danach umAbschlussdaten ergänzt. Code+Tests:+274/-7 unverändert.
-
-LaufendeVersion nachReview weiterPID10896,Startlogleer. KeineQuelländerung
-nachBuild,keinNeustart nötig. Branch feat/notch-status. KeinRemote,keinPush,
-keinPR/CI,keineVeröffentlichung. Nutzer wird umBestätigung vonLive-Position
-undKlick gebeten,daComputerUse cgWindowNotFound meldet.
-
+Base af1f6970139abc700359e38038cd2a10178b0c5e; at most 3 rounds. Round 1 prepared with gpt-6.1-sol/high. Usage recorded only when returned. Diff command: `git diff af1f6970139abc700359e38038cd2a10178b0c5e -- main.swift Tests/checks.swift README.md WORKLOG.md`.
+Round 1: APPROVE, no blocker/should findings. S1 nit: the 300 ms guard may swallow an independent reopening attempt immediately after Escape or an outside click. Deferred for the prototype: rare fast click sequence, no observed failure in the normal opening path. Track event-specific suppression as a follow-up; no change without a live reproduction. No review code changes or second round. Usage not returned.
+Review diff unchanged: +330/-8 across 4 files, followed only by completion notes. Code and tests unchanged at +274/-7.
+The reviewed version remained PID 10896, empty startup log. No source changes after build, so no restart needed. Branch feat/notch-status. No remote, push, PR, CI or publication. Asked the user to confirm live position and click behavior because Computer Use reported cgWindowNotFound.
 
 ## 2026-11-09 — Attached details and animation
 - [x] User confirmed notch display and click work on the preceding build.
@@ -212,7 +129,7 @@ Existing scope: monochrome white on black; right-adjacent notch on supported pri
 
 ### Opus implementation notes (tinyStats)
 
-Starting state, checked before assuming anything: the first screenshot (3e13ee25) came from the menu bar fallback. At that time the primary display was the external LEN P27h-10 (2560×1440 @1x, menu bar 30 pt, no notch). The details window list showed 300×268 at CG y 25, and the old 6 pt "chimney" stuck up into the transparent blue bar. The second screenshot (f1321328) came from notch mode after the built-in display became primary: 1470×956 @2x, housing 645.5…824.5 × 32 pt, wing window at 824 (AppKit had rounded 824.5 down). `showAtNotch` is unset, so it is true by registration. Safari's German menus overflow right of the housing, and the old wing covered "Fenster" and the start of "Hilfe". The geometry confirms the screenshot shows this collision.
+Starting state, checked before assuming anything: the first screenshot (3e13ee25) came from the menu bar fallback. At that time the primary display was the external LEN P27h-10 (2560×1440 @1x, menu bar 30 pt, no notch). The details window list showed 300×268 at CG y 25, and the old 6 pt "chimney" stuck up into the transparent blue bar. The second screenshot (f1321328) came from notch mode after the built-in display became primary: 1470×956 @2x, housing 645.5…824.5 × 32 pt, wing window at 824 (AppKit had rounded 824.5 down). `showAtNotch` is unset, so it is true by registration. Safari's German menus overflow right of the housing, and the old wing covered the Window menu and the start of the Help menu. The geometry confirms the screenshot shows this collision.
 
 User acceptance criteria, fixed in geometry and checks:
 - Upper-right of the wing: concave reverse curve (7 pt) into the display's top edge, no convex radius. The path checks this, and so do rendered pixels.
@@ -224,7 +141,7 @@ Design decisions:
 - Notch mode: the details hang under housing and wing as one black island. Its right edge continues the wing; the wing's lower-right corner squares off as the island attaches. Its left edge meets the housing's straight lower edge with a concave 10 pt fillet, 18 pt from the housing's own corner, so it does not depend on that corner. Width = housing + wing − 28 pt (255 pt here), at least 248 pt for large-text scaling. No overlap with the wing window, so source clicks always reach the wing.
 - Fallback: the island hangs from the bar's lower edge (visibleFrame top, never above the button), centred under the item, 272 pt wide, with concave fillets on both sides and the native status-item highlight. It is clamped to the screen and honours secondary-screen origins. This is different geometry because there is no black source in the bar.
 - Window frames lie on whole points, because AppKit rounds window origins. The drawing uses sub-point offsets, so the 824.5/928.5 edges stay exact on 2x.
-- Content: three columns (caption, SF Rounded 24 pt value with a smaller %, a 3 pt proportional meter: empty track for 0, dotted for missing, "—" for missing values). Below them a quiet upload/download tray with no capacity bar, then a footer with the tinyStats wordmark, a monochrome "Notch" switch (only shown with a housing) and "Beenden" (⌘Q). Tabular digits and fixed frames mean 1 Hz samples never re-layout.
+- Content: three columns (caption, SF Rounded 24 pt value with a smaller %, a 3 pt proportional meter: empty track for 0, dotted for missing, "—" for missing values). Below them a quiet upload/download tray with no capacity bar, then a footer with the tinyStats wordmark, a monochrome "Notch" switch (only shown with a housing) and "Quit" (⌘Q). Tabular digits and fixed frames mean 1 Hz samples never re-layout.
 - Motion: one spring on the display link (opening response 0.42 s, damping 0.8, about 1 % overshoot; closing 0.26 s, critically damped). Width leads height, and the content fades in and drops 8 pt only once the body has room, clipped to the body. Reversal retargets in flight. Reduce Motion: 150 ms crossfade. Stalled frames are capped at 1/15 s.
 - Interaction: non-activating key panel, so the front app and its menus stay. Escape (local monitor and cancelOperation), ⌘Q, outside click (global and local), clicks in transparent window parts and another app's activation all close it. Our own activation is ignored. The routing is pure and tested. During closing the panel ignores mouse events.
 - Branding: tinyStats (wordmark, accessibility labels, README). The bundle is renamed to tinyStats.app with executable tinyStats. The bundle id stays local.hsb.systemstatus, so the notch preference carries over. LSMinimumSystemVersion is 14.0 (display link and clipsToBounds).
@@ -235,16 +152,16 @@ Known constraint, not solved by design: macOS reserves no space beside the housi
 Evidence (this session):
 - `swiftc -typecheck main.swift` ok. `./Tests/run.sh`: 9 PASS blocks (live samples; formatting; indicator order; wing geometry and the concave/seamless criteria in path and pixels; island attach and bounds for p 0…1.03; spring opening, closing, reversal and stalls; content fits 248/255/272 with no re-layout; routing for Escape, ⌘Q, inside, outside and source; island render monochrome). The CPU live check now waits up to 2 s for a tick delta instead of assuming one within 50 ms; the value is still range-checked and measurement code is unchanged. `./build.sh` ok, `plutil -lint` ok, `git diff --check` ok.
 - Native offscreen renders of the real WingView, IslandView and IslandContentView, composited over the user's two screenshots (housing simulated, r = 8 assumed), saved in /private/tmp/claude-501/-Users-ts--t3-scratch-2026-11-08-ich-habe-von-einem-lokalen-298c78ca/f1f97544-a6ff-4630-b8ce-2f12a87679de/scratchpad/render/out/: notch-open-{0..3}-{dark,light}.png (typical/0/high/nil), notch-closed-*.png, *-contour.png, zoom-*.png, fallback-open-{0..3}.png, motion-*-60fps.png, motion-open-close-50fps(@2x).gif, motion-keyframes.png. These are offscreen evidence, not a live capture.
-- Runtime probe: the real IslandPresenter on this Mac's window server and display link. The island window measured X 663, Y 32, 266×154 (CG). Opening took 38–39 ticks at about 16.9 ms (60 Hz) and reached 95 % at 243–253 ms, with the largest step 0.11 per frame. The panel was key while the front app stayed "Vorschau". Escape (via NSApp.sendEvent and the local monitor) closed it in 28 ticks. Reversal (open, close at 120 ms, reopen at 220 ms) stayed continuous (largest step 0.106) and ended open and key. ⌘Q reached applicationWillTerminate. One earlier run was closed by a real Terminal activation (an observed notification, not caused by tinyStats).
+- Runtime probe: the real IslandPresenter on this Mac's window server and display link. The island window measured X 663, Y 32, 266×154 (CG). Opening took 38–39 ticks at about 16.9 ms (60 Hz) and reached 95 % at 243–253 ms, with the largest step 0.11 per frame. The panel was key while the front app stayed Preview. Escape (via NSApp.sendEvent and the local monitor) closed it in 28 ticks. Reversal (open, close at 120 ms, reopen at 220 ms) stayed continuous (largest step 0.106) and ended open and key. ⌘Q reached applicationWillTerminate. One earlier run was closed by a real Terminal activation (an observed notification, not caused by tinyStats).
 - Live app: the old exact executable /Users/ts/HSB-MenuBar/Systemstatus.app/Contents/MacOS/Systemstatus (PID 18961) was stopped. /Users/ts/HSB-MenuBar/tinyStats.app/Contents/MacOS/tinyStats runs as a single instance and its log is empty. The stale generated bundle Systemstatus.app (ignored build output from 03d0164) was moved to /private/tmp/claude-501/-Users-ts--t3-scratch-2026-11-08-ich-habe-von-einem-lokalen-298c78ca/f1f97544-a6ff-4630-b8ce-2f12a87679de/scratchpad/old-Systemstatus.app, so it can no longer start a duplicate instance. It can be rebuilt from git. The wing window is on screen at CG X 788, Y 0, 148×32, layer 25 (matches the computed frame).
 
 Limitations: this session has no CUA tool, and `screencapture` is denied (no Screen Recording permission). So there is no live screenshot, and no live mouse test of wing or status item clicks, hover or fallback highlight. The visual proof is offscreen plus window-server geometry plus runtime timing. Whether transparent window regions pass clicks through is unverified, so treat them as captured: they close the island. The fallback composite's button position is estimated from the screenshot. The housing contour is simulated.
 
-Single instance (follow-up request): main.swift now exits before creating a status item when another process with bundle id local.hsb.systemstatus is running. The earlier launch wins; if launch dates are unknown, the new launch yields, so duplicates are avoided. This is checked against the identifier that build.sh writes. Live on this Mac with PID 39220 running: a direct second exec printed "tinyStats läuft bereits (PID 39220)." and exited 0; `open -n` and plain `open` left exactly one instance. Launcher files (install.sh, bin/tinystats, Tests/install.sh) belong to the parent and were not touched.
+Single instance (follow-up request): main.swift now exits before creating a status item when another process with bundle id local.hsb.systemstatus is running. The earlier launch wins; if launch dates are unknown, the new launch yields, so duplicates are avoided. This is checked against the identifier that build.sh writes. Live on this Mac with PID 39220 running: a direct second exec printed "tinyStats is already running (PID 39220)." and exited 0; `open -n` and plain `open` left exactly one instance. Launcher files (install.sh, bin/tinystats, Tests/install.sh) belong to the parent and were not touched.
 
 ### Follow-up 2026-11-09: flush lower edge, letter-free indicator
 
-Lower edge (user: "Unterkante von tinystats nicht perfekt bündig mit Unterkante notch"):
+Lower edge (user: "The bottom of tinyStats is not perfectly aligned with the bottom of the notch"):
 - Measured on this Mac (MacBook Air 13.6", 2560×1664 panel, mode 1470×956 at 2x, so 1 pt ≈ 1.741 panel px): safe area 32 pt, auxiliary areas 32 pt high, menu bar 33 pt.
 - AppKit's own display outline (`-[NSScreen bezelPath]`, undocumented) puts the housing's straight lower edge at y 923.834, i.e. 32.166 pt below the top. That is panel row 56 (housing 312 × 56 panel px). Lower corner radius 14.6 pt; top shoulders are about 6.9 pt concave.
 - The public values are whole points, so the wing ended 0.166 pt (0.29 panel px) above the housing.
@@ -314,3 +231,9 @@ Floating-menu Sol R1 APPROVE, no findings, gpt-6.1-sol/high; usage not returned.
 Distribution Sol R1 APPROVE (gpt-6.1-sol/high), no findings, no declined findings, usage not exposed. Diff before/after review: 6 files, +70/-11 (plus this review record). Native tests, typecheck, build, installer regression and diff-check pass.
 
 Delivered behavior commit 20cd416 to GitHub main, retaining the user-requested direct-main/no-PR path. Real installed CLI update from private GitHub succeeded; a second update exercised the new parent-owned lock and updated installer handoff successfully. New zsh login resolves ~/.local/bin/tinystats; version reports installed 20cd416, repeated start retained PID63238, update restarted successfully. No UI behavior changed in this distribution pass. No PR/CI invocation, no visibility change.
+
+## English repository
+- [x] Translate README, installation guide, historical work log, app labels, tooltips, accessibility text and CLI/installer messages.
+- [x] Update language assertions and regenerate all README renderings with an English locale.
+- [x] Native tests, installer tests, rendering and build passed. Numeric formatting in the app still follows the system locale.
+Historical commit messages and stable bundle identifiers are preserved.
