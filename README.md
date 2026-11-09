@@ -3,7 +3,29 @@
 Kleines natives macOS-Werkzeug für CPU, GPU, RAM und Netzwerk, weiß auf
 schwarz. Ohne externe Abhängigkeiten, Konten oder Datenuploads.
 
-## Bauen und starten
+## Installieren und starten
+
+Das private Repository benötigt GitHub-Zugriff (`gh auth login`). Installation:
+
+```sh
+gh repo clone tschnorpfeil/tinyStats && ./tinyStats/install.sh
+```
+
+Danach genügt im Terminal:
+
+```sh
+tinystats          # starten
+tinystats update   # main abrufen, bauen und neu starten
+tinystats status
+tinystats stop
+tinystats version
+```
+
+Die App liegt unter `~/Applications/tinyStats.app`, der Befehl unter
+`~/.local/bin/tinystats`. Details zu Voraussetzungen, PATH und Updates:
+[INSTALL.md](INSTALL.md).
+
+## Aus dem Quellcode bauen
 
 Mit den installierten Xcode Command Line Tools:
 
@@ -18,9 +40,6 @@ Sitzung nur einmal: Ein weiterer Start (auch direkt über das Binary, mit
 „tinyStats läuft bereits (PID …)“. Für eine neue Version daher erst die
 laufende beenden. Die Bundle-ID bleibt `local.hsb.systemstatus`, damit die
 gespeicherte Notch-Einstellung erhalten bleibt.
-
-In Vorbereitung: ein Terminal-Befehl `tinystats` (start, status, stop,
-update), der die App nach `~/Applications/tinyStats.app` installiert.
 
 Alternativ als einzelnes Binary: `swiftc -O main.swift -o tinystats`, dann `./tinystats`.
 
@@ -41,9 +60,9 @@ wenn „Notch“ ausgeschaltet ist, erscheint dieselbe Grafik als normales
 Menüleistensymbol.
 
 **Details.** Ein Klick auf Flügel oder Symbol lässt die Details als schwarze
-Insel aus der Quelle wachsen: an der Notch unter Gehäuse und Flügel (der
-Flügel wird dabei so breit wie die Insel, deren rechte Kante ihn fortsetzt;
-links eine konkave Rundung an die gerade Gehäuseunterkante), in der
+Insel aus der Quelle wachsen: an der Notch genau auf die Gesamtbreite aus
+Gehäuse und Flügel. Links schließt sie bündig mit der Notch ab, rechts mit dem
+unverändert breiten Flügel. In der
 Menüleiste zentriert unter dem Symbol mit konkaven Ansätzen an der Unterkante
 der Leiste. Inhalt:
 

@@ -1,0 +1,39 @@
+#!/bin/sh
+# tinyStats CLI
+set -eu
+task_data=${TINYSTATS_HOME:-"$HOME/.local/share/tinystats"}
+task_apps=${TINYSTATS_APP_DIR:-"$HOME/Applications"}
+task_app="$task_apps/tinyStats.app"
+task_exe="$task_app/Contents/MacOS/tinyStats"
+owned_pids() {
+    ps -ax -o pid= -o comm= | while read -r task_pid task_comm; do
+        [ "$task_comm" != "$task_exe" ] || printf '%s\n' "$task_pid"
+    done
+}
+case "${1:-start}" in
+    start)
+        [ -d "$task_app" ] || { echo 'tinyStats fehlt. Bitte install.sh ausführen.' >&2; exit 1; }
+        if [ -z "$(owned_pids)" ]; then open "$task_app"; fi
+        ;;
+    stop)
+        for task_pid in $(owned_pids); do kill -TERM "$task_pid" 2>/dev/null || true; done
+        ;;
+    status)
+        task_pids=$(owned_pids)
+        if [ -n "$task_pids" ]; then printf 'tinyStats läuft (PID %s).\n' "$task_pids"; else echo 'tinyStats ist beendet.'; fi
+        ;;
+    version|--version|-v)
+        git -C "$task_data/source" log -1 --format='tinyStats %h (%cs)'
+        ;;
+    update)
+        [ -d "$task_data/source/.git" ] || { echo 'Verwalteter Quellcode fehlt. Bitte erneut installieren.' >&2; exit 1; }
+        [ -z "$(git -C "$task_data/source" status --porcelain)" ] || { echo 'Lokale Änderungen im Installations-Checkout; Update abgebrochen.' >&2; exit 1; }
+        git -C "$task_data/source" fetch origin main
+        git -C "$task_data/source" merge --ff-only origin/main
+        exec "$task_data/source/install.sh"
+        ;;
+    help|--help|-h)
+        echo 'tinystats [start|stop|status|version|update]'
+        ;;
+    *) echo 'Unbekannter Befehl. tinystats help' >&2; exit 2 ;;
+esac

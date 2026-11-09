@@ -267,3 +267,20 @@ Evidence:
   - App PID 50298: wing 788/0 120×33.
   - Probe with the same panels: closed 120×33, open wing 148×33 plus island 663/32 266×154, closed again 120×33. 37 ticks; right-edge mismatch 1e-13 pt.
 - No live pixel capture: CGWindowListCreateImage is obsoleted in macOS 15+, and Screen Recording is denied.
+
+## Final integration: UI and command-line install
+- [x] Parent inspected real offscreen closed/open notch renders; broad continuous island, concave upper-right and three unlabeled bars.
+- [x] Completed Opus source plus last arrow rendering refinement retained; interrupted queued follow-up after final handover to ensure one writer.
+- [x] Typecheck, native view/geometry/motion/routing tests and isolated installer tests pass.
+- [x] Installer/CLI: private source checkout, local build, staged app replacement, source main fast-forward update, dirty checkout refusal, installed-process-only stop/start, no duplicate launch.
+- [x] CLI docs and top-level README instructions.
+- [x] Combined Sol review (2 completed rounds; superseded review cancelled).
+- [ ] Commit installer; create private tinyStats GitHub repo and push main; install and verify actual terminal command/update.
+Known proof boundary: no live pixel capture available. Opus ran real panels and sampled window-server bounds through37animationticks; parent inspected native rendered views, not a screen recording. User previously confirmed live display/click and said general new direction is better; latest subtle lower-edge alignment remains visually unconfirmed. Undocumented read-only bezelPath uses guarded fallback; no dependency or runtime patch. No PR is required for the explicitly requested new repository + main delivery.
+
+## Latest user geometry correction
+The wing must never widen when opening. Expanded island now spans notch.minX...wingMaxX exactly, with no left inset or outward fillet. Removed wing spread state and dynamic window resizing entirely. Content fits the real253pt width; insufficient combined widths fall back to the normal menu bar instead of clipping text. Regression checks both exact expanded boundaries and invariant wing/window geometry across every sampled animation progress. Superseded combined Sol R1 cancelled before applying this behavior change; new review follows.
+
+Combined Sol R1: CHANGES, S1 should accepted. Repeated installer run with gh available failed because setting an already multi-valued credential helper without --replace-all returns Git exit5. Changed only that setter to --replace-all and added available mock-gh to installer fixtures plus exact two-helper assertion after update. No UI behavior change after review. R2 only S1 and changed installer/test code. Usage not returned.
+
+Final combined Sol R2 APPROVE: S1 closed, no remaining findings. gpt-6.1-sol/high, 2 completed rounds, usage not returned. Installer test with gh present passes and diffcheck passes. No declined findings. Final combined diff from03d0164 spans app redesign, fixed-wing correction, installer/CLI and documentation; late behavioral change only credentialhelper idempotency. Publish/install follows with user-authorized private repository and direct main push; no PR or CI invocation.

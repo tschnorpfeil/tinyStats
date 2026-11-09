@@ -194,8 +194,10 @@ enum MenuBarIndicators {
     static let barGap: CGFloat = 3
     /// Between the bars and the rates, wider than `barGap` so the arrows read as their own group.
     static let groupGap: CGFloat = 6
+    /// Drawn arrow, as tall as the digits and stroked like the bars are rounded.
+    static let arrowSize = NSSize(width: 5, height: 6)
     /// Arrow plus right-aligned rate; the widest rate ("999M") keeps 2 pt from its arrow.
-    static let rateColumn: CGFloat = 36
+    static let rateColumn: CGFloat = 34
     static let barsWidth = 3 * barWidth + 2 * barGap
     static let size = NSSize(width: barsWidth + groupGap + rateColumn, height: 22)
     static let rateFont = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium)
@@ -230,6 +232,24 @@ enum MenuBarIndicators {
         [("↑", compactRate(net?.uploadBytesPerSecond), 11), ("↓", compactRate(net?.downloadBytesPerSecond), 0)]
     }
 
+    static func drawArrow(up: Bool, in box: NSRect) {
+        let inset = box.insetBy(dx: 0.6, dy: 0.6)
+        let tip = NSPoint(x: inset.midX, y: up ? inset.maxY : inset.minY)
+        let tail = NSPoint(x: inset.midX, y: up ? inset.minY : inset.maxY)
+        let wing = inset.width / 2
+        let path = NSBezierPath()
+        path.move(to: tail)
+        path.line(to: tip)
+        path.move(to: NSPoint(x: tip.x - wing, y: tip.y + (up ? -wing : wing)))
+        path.line(to: tip)
+        path.line(to: NSPoint(x: tip.x + wing, y: tip.y + (up ? -wing : wing)))
+        path.lineWidth = 1.2
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        NSColor.black.setStroke()
+        path.stroke()
+    }
+
     static func image(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?) -> NSImage {
         let values = [cpu, gpu, ram]
         let rows = rateRows(net)
@@ -252,8 +272,12 @@ enum MenuBarIndicators {
                 }
             }
             let attributes: [NSAttributedString.Key: Any] = [.font: rateFont, .foregroundColor: NSColor.black]
+            // Digits sit on the baseline and are cap-height tall; the arrow spans the same band.
+            let baseline = -rateFont.descender + (11 - rateFont.ascender + rateFont.descender) / 2
             for (arrow, text, y) in rows {
-                (arrow as NSString).draw(at: NSPoint(x: barsWidth + groupGap, y: y), withAttributes: attributes)
+                let box = NSRect(x: barsWidth + groupGap, y: y + baseline + (rateFont.capHeight - arrowSize.height) / 2,
+                                 width: arrowSize.width, height: arrowSize.height)
+                drawArrow(up: arrow == "↑", in: box)
                 let width = (text as NSString).size(withAttributes: attributes).width
                 (text as NSString).draw(at: NSPoint(x: size.width - width, y: y), withAttributes: attributes)
             }
@@ -334,24 +358,13 @@ struct NotchWing: Equatable {
     /// Right edge of the compact wing.
     var wingMaxX: CGFloat { notch.maxX + Self.wingWidth }
 
-    /// Right edge while the details hang below: the wing widens with the body.
-    var openMaxX: CGFloat { max(wingMaxX, notch.minX + IslandLayout.notchInset + IslandLayout.notchWidth) }
-
-    /// Right edge for `spread` 0 (compact) to 1 (open).
-    func maxX(spread: CGFloat) -> CGFloat { wingMaxX + (openMaxX - wingMaxX) * min(1, max(0, spread)) }
-
-    /// Window frame on whole points (AppKit rounds window origins; the housing
-    /// edges may sit between points): overlap strip, wing and top flare, from
-    /// the point row holding the housing's lower edge up to the top.
-    func frame(open: Bool) -> NSRect {
+    /// One fixed window for the compact wing, including its top flare.
+    var frame: NSRect {
         let minX = (notch.maxX - Self.notchOverlap).rounded(.down)
-        let maxX = ((open ? openMaxX : wingMaxX) + Self.topFlare).rounded(.up)
+        let maxX = (wingMaxX + Self.topFlare).rounded(.up)
         let minY = notch.minY.rounded(.down)
         return NSRect(x: minX, y: minY, width: maxX - minX, height: notch.maxY - minY)
     }
-
-    var frame: NSRect { frame(open: false) }
-    var openFrame: NSRect { frame(open: true) }
 
     /// Housing edge, compact wing edge and lower edge in window coordinates (sub-point exact).
     var junctionX: CGFloat { notch.maxX - frame.minX }
@@ -385,17 +398,18 @@ struct NotchWing: Equatable {
             notch = NSRect(x: notch.minX, y: bottom, width: notch.width, height: screenFrame.maxY - bottom)
         }
         let wing = NotchWing(notch: notch)
-        return wing.openFrame.maxX <= rightArea.maxX + tolerance ? wing : nil
+        return wing.frame.maxX <= rightArea.maxX + tolerance &&
+            wing.notch.width + Self.wingWidth >= IslandLayout.minimumWidth ? wing : nil
     }
 
     /// Window coordinates. Concave flare where the right edge meets the top of
     /// the display, straight lower edge on the housing's lower edge, convex free
     /// lower-right corner that squares off (`attach` → 1) while details hang
-    /// below; `spread` widens the wing to the body's right edge.
-    func path(attach: CGFloat, spread: CGFloat = 0) -> NSBezierPath {
+    /// below. Its width stays fixed throughout the transition.
+    func path(attach: CGFloat) -> NSBezierPath {
         let top = notch.maxY - frame.minY
         let bottom = bottomY
-        let edge = maxX(spread: spread) - frame.minX
+        let edge = edgeX
         let flare = Self.topFlare
         let radius = Self.bottomRadius * (1 - min(1, max(0, attach)))
         let path = NSBezierPath()
@@ -417,9 +431,6 @@ struct NotchWing: Equatable {
 /// Where the details hang and how they grow out of their source. Global
 /// coordinates; `path`, `bodyRect` and `finalBodyRect` use window coordinates.
 struct IslandLayout: Equatable {
-    static let notchInset: CGFloat = 28
-    /// Body width under the housing; the wing widens to it while open.
-    static let notchWidth: CGFloat = 255
     static let fillet: CGFloat = 10
     static let cornerRadius: CGFloat = 22
     static let menuBarWidth: CGFloat = 272
@@ -435,16 +446,12 @@ struct IslandLayout: Equatable {
     var leftFillet: CGFloat
     var rightFillet: CGFloat
 
-    /// Under housing and wing: the right edge continues the widening wing; the
-    /// left edge meets the housing's straight lower edge with a concave fillet,
-    /// well clear of the housing's own lower-left corner. The top edge runs on
-    /// the first whole point at or above the housing's lower edge: hidden behind
-    /// housing and wing, overlapping instead of abutting the wing's antialiased
-    /// lower edge (no seam), and the content stays on whole points.
+    /// Exact union of housing and compact wing: neither outer edge moves.
+    /// Overlap the fractional lower edge to avoid a seam between windows.
     static func notch(_ wing: NotchWing, height: CGFloat) -> IslandLayout {
         IslandLayout(attachY: wing.notch.minY.rounded(.up), source: wing.notch.maxX...wing.wingMaxX,
-                     final: (wing.notch.minX + notchInset)...wing.openMaxX, height: height,
-                     leftFillet: fillet, rightFillet: 0)
+                     final: wing.notch.minX...wing.wingMaxX, height: height,
+                     leftFillet: 0, rightFillet: 0)
     }
 
     /// From the menu bar's lower edge, centred under the status item.
@@ -1163,8 +1170,6 @@ final class IslandPresenter: NSObject {
 final class WingView: NSView {
     var wing: NotchWing? { didSet { needsDisplay = true } }
     var attach: CGFloat = 0 { didSet { if attach != oldValue { needsDisplay = true } } }
-    /// 0 compact, 1 as wide as the details hanging below.
-    var spread: CGFloat = 0 { didSet { if spread != oldValue { needsDisplay = true } } }
     var indicator: NSImage? { didSet { needsDisplay = true } }
     var onClick: (() -> Void)?
 
@@ -1180,7 +1185,7 @@ final class WingView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let wing else { return }
         NSColor.black.setFill()
-        wing.path(attach: attach, spread: spread).fill()
+        wing.path(attach: attach).fill()
         guard let indicator, let context = NSGraphicsContext.current else { return }
         let target = wing.indicatorRect
         context.saveGraphicsState()
@@ -1224,22 +1229,13 @@ final class WingPanel: NSPanel {
 
     func place(_ wing: NotchWing) {
         wingView.wing = wing
-        follow(attach: 0, spread: 0)
+        setFrame(wing.frame, display: false)
+        wingView.frame = NSRect(origin: .zero, size: wing.frame.size)
+        follow(attach: 0)
     }
 
-    /// Tracks the details: the window takes the open width before the wing
-    /// starts to widen and gives it back once the wing is compact again, so
-    /// the closed wing never covers more of the menu bar than it shows.
-    func follow(attach: CGFloat, spread: CGFloat) {
-        guard let wing = wingView.wing else { return }
-        let target = wing.frame(open: spread > 0)
-        if frame != target {
-            setFrame(target, display: false)
-            wingView.frame = NSRect(origin: .zero, size: target.size)
-            wingView.needsDisplay = true
-        }
+    func follow(attach: CGFloat) {
         wingView.attach = attach
-        wingView.spread = spread
     }
 }
 
@@ -1296,8 +1292,8 @@ final class App: NSObject, NSApplicationDelegate {
         wingPanel.wingView.onClick = { [weak self] in self?.toggleDetails() }
         presenter.onProgress = { [weak self] progress in
             guard let self, self.wing != nil else { return }
-            // Same widening as the body's right edge, so both edges stay one line.
-            self.wingPanel.follow(attach: Choreography.attach(progress), spread: Choreography.widthProgress(progress))
+            // Only join the lower corner; the compact wing never changes width.
+            self.wingPanel.follow(attach: Choreography.attach(progress))
         }
         presenter.onPresentedChange = { [weak self] shown in
             // After the button's own mouse-up handling, which resets its highlight.
@@ -1353,7 +1349,7 @@ final class App: NSObject, NSApplicationDelegate {
 
     /// Island geometry for the active placement and the clickable source rect.
     private func currentLayout() -> (IslandLayout, NSRect)? {
-        if let wing { return (.notch(wing, height: IslandContentView.height), wing.openFrame) }
+        if let wing { return (.notch(wing, height: IslandContentView.height), wing.frame) }
         guard let button = status.button, let window = button.window, let screen = window.screen else { return nil }
         let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
         return (.menuBar(anchor: anchor, screen: screen.frame, visibleTop: screen.visibleFrame.maxY,

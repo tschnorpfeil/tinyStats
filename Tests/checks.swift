@@ -71,7 +71,7 @@ for locale in [Locale(identifier: "de_DE"), Locale(identifier: "en_US")] {
     for rate in [0.0, 999, 1500, 999_499, 999_500, 9_940_000, 999_499_999, 999_499_999_999, 999_500_000_000, 1e12] {
         let text = MenuBarIndicators.compactRate(rate, locale: locale) as NSString
         let width = text.size(withAttributes: [.font: MenuBarIndicators.rateFont]).width
-        let arrowWidth = ("↓" as NSString).size(withAttributes: [.font: MenuBarIndicators.rateFont]).width
+        let arrowWidth = MenuBarIndicators.arrowSize.width
         assert(width + arrowWidth + 2 <= rateColumn, "Arrow and localized rate need at least 2pt separation")
     }
 }
@@ -145,7 +145,7 @@ let scoutLeft = NSRect(x: 0, y: 924, width: 645.5, height: 32)
 let scoutRight = NSRect(x: 824.5, y: 924, width: 645.5, height: 32)
 let publicWing = NotchWing.make(screenFrame: scoutScreen, leftArea: scoutLeft, rightArea: scoutRight, topInset: 32)!
 assert(publicWing.notch == NSRect(x: 645.5, y: 924, width: 179, height: 32), "Without an outline: the public values")
-assert(publicWing.frame == NSRect(x: 788, y: 924, width: 120, height: 32) && publicWing.bottomY == 0)
+assert(publicWing.frame == NSRect(x: 788, y: 924, width: 118, height: 32) && publicWing.bottomY == 0)
 
 /// Display outline like this Mac's `bezelPath` (global points): housing sides at
 /// the public edges, lower edge at `bottom`, rounded lower corners whose control
@@ -199,7 +199,7 @@ if let screen = NSScreen.screens.first, let live = HousingOutline.outline(of: sc
 let wing = NotchWing.make(screenFrame: scoutScreen, leftArea: scoutLeft, rightArea: scoutRight, topInset: 32, outline: scoutOutline)!
 assert(wing.notch == NSRect(x: 645.5, y: housingBottom, width: 179, height: 956 - housingBottom))
 assert(wing.wingMaxX == 824.5 + NotchWing.wingWidth)
-assert(wing.frame == NSRect(x: 788, y: 923, width: 120, height: 33),
+assert(wing.frame == NSRect(x: 788, y: 923, width: 118, height: 33),
        "Whole-point window from the point row holding the housing's lower edge to the top")
 assert(wing.frame.minY + wing.bottomY == housingBottom && wing.frame.maxY == scoutScreen.maxY,
        "Lower edge exactly on the housing's lower edge, not on the rounded safe area")
@@ -207,14 +207,11 @@ assert(wing.frame.minX > wing.notch.minX && wing.frame.minX < wing.notch.maxX,
        "The overlap strip stays behind the housing and never reaches the app menus left of it")
 assert(wing.frame.minX + wing.junctionX == wing.notch.maxX && wing.frame.minX + wing.edgeX == wing.wingMaxX,
        "Drawing offsets keep the half-point housing edge exact")
-assert(wing.frame.maxX >= wing.wingMaxX + NotchWing.topFlare && wing.openFrame.maxX <= scoutRight.maxX)
+assert(wing.frame.maxX >= wing.wingMaxX + NotchWing.topFlare && wing.frame.maxX <= scoutRight.maxX)
 assert(wing.frame.minY + wing.indicatorRect.minY == publicWing.frame.minY + publicWing.indicatorRect.minY &&
        wing.indicatorRect.minX == wing.junctionX + NotchWing.indicatorInset, "The indicator does not move")
 assert(wing.hitRect.minY == wing.bottomY, "Hit area is the visible wing")
-assert(wing.openMaxX == wing.notch.minX + IslandLayout.notchInset + IslandLayout.notchWidth && wing.openMaxX > wing.wingMaxX)
-assert(wing.openFrame.minX == wing.frame.minX && wing.openFrame.minY == wing.frame.minY &&
-       wing.openFrame.maxX >= wing.openMaxX + NotchWing.topFlare, "Open frame only adds width on the right")
-assert(wing.maxX(spread: 0) == wing.wingMaxX && wing.maxX(spread: 1) == wing.openMaxX && wing.maxX(spread: 2) == wing.openMaxX)
+
 assert(NotchWing.make(screenFrame: scoutScreen, leftArea: nil, rightArea: nil, topInset: 0) == nil)
 assert(NotchWing.make(screenFrame: scoutScreen, leftArea: nil, rightArea: scoutRight, topInset: 32) == nil)
 assert(NotchWing.make(screenFrame: scoutScreen, leftArea: scoutLeft, rightArea: scoutRight, topInset: 0) == nil)
@@ -241,7 +238,7 @@ let shiftedWing = NotchWing.make(screenFrame: shiftedScreen, leftArea: scoutLeft
 assert(shiftedWing.frame == wing.frame.offsetBy(dx: -1470, dy: 300) && shiftedWing.bottomY == wing.bottomY,
        "Non-zero screen origin must be honoured")
 for candidate in [wing, publicWing, tallWing, shiftedWing] {
-    for f in [candidate.frame, candidate.openFrame] {
+    for f in [candidate.frame, candidate.frame] {
         assert(f.minX == f.minX.rounded() && f.width == f.width.rounded() && f.minY == f.minY.rounded() && f.height == f.height.rounded())
     }
 }
@@ -269,10 +266,10 @@ for x in stride(from: CGFloat(0.5), through: edge - NotchWing.bottomRadius - 0.5
            "Lower edge runs straight through the junction exactly on the housing's lower edge")
 }
 assert(NotchWing.notchOverlap >= wing.notch.height / 2, "Overlap exceeds any plausible lower housing radius")
-let spreadWing = wing.path(attach: 1, spread: 1)
-let openEdge = wing.openMaxX - wing.frame.minX
+let spreadWing = wing.path(attach: 1)
+let openEdge = wing.wingMaxX - wing.frame.minX
 assert(spreadWing.contains(NSPoint(x: openEdge - 0.4, y: lowerEdge + 0.4)) && !spreadWing.contains(NSPoint(x: openEdge + 0.5, y: wingTop / 2)) &&
-       spreadWing.contains(NSPoint(x: openEdge + 0.1 * flare, y: wingTop - 0.1 * flare)), "Widened wing keeps the flare and the straight edge")
+       spreadWing.contains(NSPoint(x: openEdge + 0.1 * flare, y: wingTop - 0.1 * flare)), "Attached wing keeps the flare and the straight edge")
 
 func pixels(of view: NSView, scale: CGFloat = 2) -> NSBitmapImageRep {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * scale),
@@ -327,36 +324,33 @@ assert(notchLayout.attachY == wing.notch.minY.rounded(.up) && notchLayout.attach
        "Top edge on the first whole point above the housing's lower edge: hidden behind housing and wing")
 assert(notchLayout.frame.maxY == notchLayout.attachY && notchLayout.frame.maxY - (wing.frame.minY + wing.bottomY) < 0.5,
        "Details reach into the wing's window only below its visible lower edge (less than a 2x pixel row)")
-assert(notchLayout.frame.intersection(wing.openFrame).height <= 1 &&
-       notchLayout.frame.maxY <= wing.openFrame.minY + wing.hitRect.minY + 0.5, "The visible wing above stays clickable")
-assert(notchLayout.final.upperBound == wing.openMaxX && notchLayout.rightFillet == 0, "Right edge continues the widened wing")
-assert(notchLayout.final.lowerBound - notchLayout.leftFillet >= wing.notch.minX + 16,
-       "Left fillet meets the housing's straight lower edge, clear of its own corner")
-assert(notchLayout.width == IslandLayout.notchWidth && notchLayout.width >= IslandLayout.minimumWidth)
-assert(notchLayout.frame == NSRect(x: 663, y: 770, width: 266, height: 154), "Whole-point island window, as approved")
-assert(notchLayout.frame.minX + notchLayout.finalBodyRect.maxX == wing.openMaxX,
-       "Island and widened wing right edges coincide after whole-point rounding")
+assert(notchLayout.frame.intersection(wing.frame).height <= 1 &&
+       notchLayout.frame.maxY <= wing.frame.minY + wing.hitRect.minY + 0.5, "The visible wing above stays clickable")
+assert(notchLayout.final.upperBound == wing.wingMaxX && notchLayout.rightFillet == 0, "Right edge continues the fixed wing")
+assert(notchLayout.final.lowerBound == wing.notch.minX && notchLayout.leftFillet == 0,
+       "Expanded left edge exactly matches the notch, with no inset or protruding fillet")
+assert(notchLayout.width == wing.notch.width + NotchWing.wingWidth && notchLayout.width >= IslandLayout.minimumWidth)
+assert(notchLayout.frame.minX + notchLayout.finalBodyRect.maxX == wing.wingMaxX,
+       "Expanded right edge equals the unchanged compact wing")
 let startShape = notchLayout.shape(at: 0)
 assert(startShape.height == 0 && startShape.minX == wing.notch.maxX && startShape.maxX == wing.wingMaxX,
        "Motion starts as the compact wing itself")
 for step in 0...103 {
     let p = CGFloat(step) / 100
-    assert(abs(notchLayout.shape(at: p).maxX - wing.maxX(spread: Choreography.widthProgress(p))) < 1e-9,
+    assert(abs(notchLayout.shape(at: p).maxX - wing.wingMaxX) < 1e-9,
            "Wing and body share one right edge throughout the motion (p \(p))")
 }
 let openShape = notchLayout.shape(at: 1)
 assert(openShape.minX == notchLayout.final.lowerBound && openShape.maxX == notchLayout.final.upperBound &&
-       openShape.height == height && openShape.radius == IslandLayout.cornerRadius && openShape.leftFillet == IslandLayout.fillet)
-let narrowWing = NotchWing.make(screenFrame: NSRect(x: 0, y: 0, width: 1024, height: 665),
-                                leftArea: NSRect(x: 0, y: 633, width: 450, height: 32),
-                                rightArea: NSRect(x: 574, y: 633, width: 450, height: 32), topInset: 32)!
-let narrowLayout = IslandLayout.notch(narrowWing, height: height)
-assert(narrowLayout.width == IslandLayout.notchWidth && narrowLayout.final.lowerBound == narrowWing.notch.minX + IslandLayout.notchInset,
-       "Large-text scaling keeps the content width; the wing widens further instead of the body sliding under the corner")
+       openShape.height == height && openShape.radius == IslandLayout.cornerRadius && openShape.leftFillet == 0)
+assert(NotchWing.make(screenFrame: NSRect(x: 0, y: 0, width: 1024, height: 665),
+                      leftArea: NSRect(x: 0, y: 633, width: 450, height: 32),
+                      rightArea: NSRect(x: 574, y: 633, width: 450, height: 32), topInset: 32) == nil,
+       "Use normal menu bar if exact notch+wing width cannot hold readable content")
 let publicLayout = IslandLayout.notch(publicWing, height: height)
 assert(publicLayout.attachY == publicWing.notch.minY && publicLayout.frame == notchLayout.frame, "Same island without an outline")
 
-for layout in [notchLayout, narrowLayout] {
+for layout in [notchLayout, publicLayout] {
     let bounds = NSRect(origin: .zero, size: layout.frame.size).insetBy(dx: -0.01, dy: -0.01)
     var p: CGFloat = 0
     while p <= 1.03 {
@@ -372,8 +366,8 @@ let fillet = IslandLayout.fillet
 assert(!full.contains(NSPoint(x: body.minX + 0.5, y: body.minY + 0.5)) &&
        !full.contains(NSPoint(x: body.maxX - 0.5, y: body.minY + 0.5)), "Free lower corners convex")
 assert(full.contains(NSPoint(x: body.maxX - 0.3, y: body.maxY - 0.3)), "Square below the wing")
-assert(full.contains(NSPoint(x: body.minX - 0.1 * fillet, y: body.maxY - 0.1 * fillet)) &&
-       !full.contains(NSPoint(x: body.minX - 0.4 * fillet, y: body.maxY - 0.4 * fillet)), "Concave fillet under the housing")
+assert(full.contains(NSPoint(x: body.minX + 0.3, y: body.maxY - 0.3)) &&
+       !full.contains(NSPoint(x: body.minX - 0.3, y: body.maxY - 0.3)), "Top left stays inside the notch's exact left boundary")
 
 let external = NSRect(x: 0, y: 0, width: 2560, height: 1440)
 let anchor = NSRect(x: 2000, y: 1413, width: 92, height: 24)
@@ -390,7 +384,7 @@ assert(edgeLayout.frame.maxX <= external.maxX - IslandLayout.screenMargin && edg
 let second = external.offsetBy(dx: -2560, dy: 0)
 let secondLayout = IslandLayout.menuBar(anchor: anchor.offsetBy(dx: -2560, dy: 0), screen: second, visibleTop: 1410, height: height)
 assert(secondLayout.frame == barLayout.frame.offsetBy(dx: -2560, dy: 0), "Secondary-screen origin honoured")
-print("PASS: island hangs from the housing, shares the widening wing's right edge, fillets/corners, bounds, fallback clamp")
+print("PASS: island hangs from the housing, shares the fixed wing's right edge, fillets/corners, bounds, fallback clamp")
 
 // MARK: Motion
 
@@ -509,12 +503,13 @@ assert(wingPanel.level == .statusBar && !wingPanel.canBecomeKey && !wingPanel.co
 assert(wingPanel.constrainFrameRect(wing.frame, to: nil) == wing.frame)
 wingPanel.place(wing)
 assert(wingPanel.frame == wing.frame && wingPanel.wingView.wing == wing)
-wingPanel.follow(attach: 1, spread: 0.4)
-assert(wingPanel.frame == wing.openFrame && wingPanel.wingView.spread == 0.4 && wingPanel.wingView.frame.size == wing.openFrame.size,
-       "Window takes the open width while the wing widens")
-wingPanel.follow(attach: 0, spread: 0)
-assert(wingPanel.frame == wing.frame && wingPanel.wingView.frame.size == wing.frame.size,
-       "Compact again once the details are gone: the closed wing covers no more than it shows")
+let compactFrame = wingPanel.frame
+for step in 0...103 {
+    wingPanel.follow(attach: Choreography.attach(CGFloat(step) / 100))
+    assert(wingPanel.frame == compactFrame && wingPanel.wingView.frame.size == compactFrame.size,
+           "Opening the details never widens or resizes the menu bar widget")
+}
+wingPanel.follow(attach: 0)
 
 let presenter = IslandPresenter(content: IslandContentView(width: notchLayout.width))
 let panel = presenter.panel
@@ -549,6 +544,9 @@ assert(island.subviews.first!.isHidden, "Nothing to reveal while closed")
 island.setProgress(1)
 assert(islandContent.alphaValue == 1 && islandContent.frame.maxY == island.subviews.first!.bounds.maxY)
 let islandPixels = pixels(of: island)
+if let destination = ProcessInfo.processInfo.environment["TINYSTATS_RENDER_PATH"] {
+    try! islandPixels.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: destination))
+}
 assert(isBlack(color(islandPixels, body.midX, islandPixels.size.height - body.minY - 2)), "Black body")
 assert(color(islandPixels, body.minX + 1, islandPixels.size.height - body.minY - 1).alphaComponent < 0.01, "Transparent outside the convex corner")
 let islandCensus = census(islandPixels)
