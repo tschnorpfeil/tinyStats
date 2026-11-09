@@ -309,6 +309,8 @@ Floating-menu Sol R1 APPROVE, no findings, gpt-6.1-sol/high; usage not returned.
 - [x] Add regressions for failed remote update/version preservation and concurrent-update rejection.
 - [x] Clarify prerequisites, troubleshooting, uninstall paths, full local checks and current notch contour.
 - [x] Complete local gates and Sol review.
-- [ ] Publish reviewed change, update real installation and verify CLI/runtime.
+- [x] Publish reviewed change, update real installation and verify CLI/runtime.
 
 Distribution Sol R1 APPROVE (gpt-6.1-sol/high), no findings, no declined findings, usage not exposed. Diff before/after review: 6 files, +70/-11 (plus this review record). Native tests, typecheck, build, installer regression and diff-check pass.
+
+Delivered behavior commit 20cd416 to GitHub main, retaining the user-requested direct-main/no-PR path. Real installed CLI update from private GitHub succeeded; a second update exercised the new parent-owned lock and updated installer handoff successfully. New zsh login resolves ~/.local/bin/tinystats; version reports installed 20cd416, repeated start retained PID63238, update restarted successfully. No UI behavior changed in this distribution pass. No PR/CI invocation, no visibility change.
