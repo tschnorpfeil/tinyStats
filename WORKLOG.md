@@ -133,3 +133,56 @@ R→Netz als optischen Nit eingeordnet:17→16pt verschlechtert die Abstände
 zwischen den drei Gruppen. Unverändertes geprüftes Layout beibehalten.
 Nutzerwechsel auf Notch-Idee vor dem Neustart. Der96pt-Stand wird als
 Fallback-Basis committet; keine Änderungen gehen verloren.
+
+
+# Notch-Prototyp
+
+Nutzerentscheidung: rechts an echter Notch, weiß auf schwarz; auf primärem
+Display ohne Notch normale Menüleiste. Dirigent-Bau mit explizit erlaubtem
+shared Opus5.5-Builder, weil T3 keinen projektübergreifenden Worktree zuließ.
+Basis af1f697, Buildercommit3548266. Änderungen nur main.swift und Checks,
+kompletten Diff selbst gelesen. Keine Messlogikänderung.
+
+- [x] Display-Geometrie lesen (1470×956,Notchrand824.5,32pt hoch)
+- [x] Notch-Overlay und Menüleisten-Fallback bauen
+- [x] Checkbox zum Zurückwechseln bei Platzkonflikten
+- [x] Geometrie, Form, Farbmaske, Checkbox und Build lokal prüfen
+- [x] Native Offscreen-Grafik selbst ansehen
+- [ ] Live-Start und Bedienung prüfen
+- [x] Sol-Review abschließen
+- [x] Abschlussstand für lokalen Commit vorbereiten
+
+Öffentliche AppKit-APIs, keine neuen Berechtigungen. Notch-Frame auf diesem
+Mac: (824.5,924,108,32). Mono, nur rechteAußenecken8pt rund. Statusitem
+im Notchmodus unsichtbar, Panel nicht aktivierend, eineTimerquelle bleibt.
+Die Detailansicht ist in beiden Modi identisch und bietet die Rückkehr.
+
+Grenzen: Platz neben der Notch ist nicht reserviert. Kein automatischer
+Nachweis freier fremder Statusitem-Flächen. Primäres Display bestimmt Modus.
+Vollbild/Autohide/MultiDisplay noch nicht live geprüft. Testausgaben belegen
+Geometrie und Offscreen-Rendering, keine Live-Bedienung.
+
+Live-Start: PID10896,Log /tmp/hsb-notch.log leer. ComputerUse kann weder
+Systemstatus noch Finder-Fenster erfassen: cgWindowNotFound. Daher Live-
+Position,Klicks undTastatur weiter offen; gestarteterProzess ist keinUI-Beleg.
+
+## Sol Ledger Notch
+
+Basis af1f6970139abc700359e38038cd2a10178b0c5e, maximal3Runden.
+Runde1 vorbereitet; gpt-6.1-sol/high. Noch keine Findings. Usage nur falls
+zurückgegeben. GleicherDiff für alleRunden:
+`git diff af1f6970139abc700359e38038cd2a10178b0c5e -- main.swift Tests/checks.swift README.md WORKLOG.md`.
+
+Sol-Notch-Runde1: APPROVE, gpt-6.1-sol/high. Keine blocker/should.
+S1 nit:300ms-Sperre kann sehr schnelle eigenständigeWiederöffnungsversuche
+nachEscape/Außenklick unterdrücken. FürPrototyp zurückgestellt; seltene
+Schnellklickfolge,kein belegterFehler im normalenÖffnungspfad. Ereignisgenaue
+Unterdrückung alsFollow-up vormerken,nicht ohneLive-Reproduktion umbauen.
+KeineReview-Codeänderung,keinezweiteRunde nötig. Usage nicht zurückgegeben.
+Review-Diff vor/nach unverändert:+330/-8 über4Dateien; nur diesesProtokoll
+wird danach umAbschlussdaten ergänzt. Code+Tests:+274/-7 unverändert.
+
+LaufendeVersion nachReview weiterPID10896,Startlogleer. KeineQuelländerung
+nachBuild,keinNeustart nötig. Branch feat/notch-status. KeinRemote,keinPush,
+keinPR/CI,keineVeröffentlichung. Nutzer wird umBestätigung vonLive-Position
+undKlick gebeten,daComputerUse cgWindowNotFound meldet.

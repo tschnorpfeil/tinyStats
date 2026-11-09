@@ -15,7 +15,10 @@ Mit den installierten Xcode Command Line Tools:
 open Systemstatus.app
 ```
 
-Die App hat kein Dock-Symbol. Klick auf die Indikatoren öffnet die Werte;
+Die App hat kein Dock-Symbol. Auf einem Hauptdisplay mit Notch schließt
+sie rechts an die Kameraaussparung an: schwarz, weiße Indikatoren, rechts
+gerundet. Ohne Notch erscheint die normale Menüleistenanzeige.
+Klick auf die Indikatoren öffnet die Werte;
 Außenklick oder Escape schließt die Ansicht. „Beenden“ oder ⌘Q im Popover
 beendet die App. Vor dem Wechsel von einer alten Version diese beenden,
 damit nur eine Instanz läuft. Autostart wird nicht eingerichtet.
@@ -54,3 +57,23 @@ Kürzel C, G und R stehen lesbar neben dem jeweiligen Balken. Ein Strich
 in der Spur bedeutet fehlende Daten; eine leere Spur bedeutet gemessene 0 %.
 Die Gesamtbreite bleibt bei wechselnden Werten konstant bei 96 pt. Tooltip und VoiceOver
 enthalten die beschrifteten Werte und vollständigen Netzwerkeinheiten.
+
+## Notch-Anzeige
+
+Der Modus richtet sich nach dem primären Display (erstes NSScreen). Ein
+externes Hauptdisplay ohne Notch verwendet daher die normale Menüleiste,
+auch wenn das interne MacBook-Display angeschlossen bleibt. Bei Änderungen
+an der Display-Anordnung wird die Position neu bestimmt.
+
+„An Notch anzeigen“ in der Detailansicht schaltet zwischen Notch-Overlay und
+normaler Menüleiste um; die Wahl wird lokal gespeichert. Auf einem Display
+ohne nutzbare Notch wird die Option ausgeblendet. Messwerte und Details
+bleiben in beiden Modi gleich.
+
+macOS reserviert neben der Notch keinen Platz für dieses Overlay. Falls
+andere Menüleistensymbole dort liegen, können sie verdeckt werden; dann
+„An Notch anzeigen“ ausschalten. Es werden keine zusätzlichen Rechte oder
+Systemänderungen benötigt. Automatisch ausgeblendete Menüleisten,
+Vollbild-Spaces und der Wechsel zwischen mehreren echten Displays sind
+noch nicht live geprüft; die Panel-Konfiguration erzwingt keine Anzeige
+über Vollbild-Apps.
