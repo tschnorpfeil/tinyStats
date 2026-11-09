@@ -2,8 +2,13 @@
 let renderApp = NSApplication.shared
 renderApp.appearance = NSAppearance(named: .darkAqua)
 let rates = NetworkRates(downloadBytesPerSecond: 1_200_000, uploadBytesPerSecond: 84_000)
-let indicator = MenuBarIndicators.image(cpu: 0.23, gpu: 0.07, ram: 0.62, net: rates)
-let canvasSize = NSSize(width: 480, height: 230)
+let sample = Sample(cpu: 0.23, gpu: 0.07, ram: 0.62, net: rates,
+                    battery: BatteryStatus(fraction: 0.84, state: .charging, usageWatts: 14.2, chargeWatts: 23.1),
+                    disk: DiskSpace(totalBytes: 994_000_000_000, freeBytes: 412_000_000_000),
+                    diskIO: DiskRates(readBytesPerSecond: 3_400_000, writeBytesPerSecond: 610_000),
+                    swapUsedBytes: 1_200_000_000)
+let indicator = MenuBarIndicators.image(bars: [sample.cpu, sample.gpu, sample.ram], readout: Metric.network.readout(sample))
+let canvasSize = NSSize(width: 480, height: 320)
 
 final class PreviewCanvas: NSView {
     var housing: NSRect?
@@ -19,7 +24,7 @@ final class PreviewCanvas: NSView {
                 .font: NSFont.systemFont(ofSize: 43, weight: .semibold), .foregroundColor: NSColor.white])
             ("Your Mac, at a glance." as NSString).draw(at: NSPoint(x: 34, y: 162), withAttributes: [
                 .font: NSFont.systemFont(ofSize: 17, weight: .regular), .foregroundColor: NSColor.white.withAlphaComponent(0.8)])
-            ("CPU · GPU · RAM · Network" as NSString).draw(at: NSPoint(x: 34, y: 42), withAttributes: [
+            ("CPU · GPU · RAM · Battery · Disk · Network" as NSString).draw(at: NSPoint(x: 34, y: 42), withAttributes: [
                 .font: NSFont.systemFont(ofSize: 14, weight: .medium), .foregroundColor: NSColor.white.withAlphaComponent(0.7)])
         }
         if let housing {
@@ -40,9 +45,9 @@ func writePreview(notch: Bool, collapsed: Bool = false, social: Bool = false, to
     let anchor = NSRect(x: 207, y: barBottom, width: 66, height: 32)
     let layout = notch ? IslandLayout.notch(wing, height: IslandContentView.height)
         : IslandLayout.menuBar(anchor: anchor, screen: canvas.bounds, visibleTop: barBottom, height: IslandContentView.height)
-    let content = IslandContentView(width: layout.width)
+    let content = IslandContentView(width: layout.width, hasBattery: true)
     content.setNotchOption(available: notch, enabled: notch)
-    content.update(cpu: 0.23, gpu: 0.07, ram: 0.62, net: rates)
+    content.update(sample)
     let island = IslandView(content: content)
     island.configure(layout)
     island.setProgress(collapsed ? 0 : 1)

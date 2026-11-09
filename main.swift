@@ -1,17 +1,73 @@
 import AppKit
 import QuartzCore
 import IOKit
+import IOKit.ps
 import Darwin
 import CoreFoundation
 
 // MARK: - Metrics
 
-struct NetworkRates {
+struct NetworkRates: Equatable {
     let downloadBytesPerSecond: Double
     let uploadBytesPerSecond: Double
 }
 
+struct DiskRates: Equatable {
+    let readBytesPerSecond: Double
+    let writeBytesPerSecond: Double
+}
+
+struct DiskSpace: Equatable {
+    let totalBytes: Double
+    let freeBytes: Double
+    var usedFraction: Double? { totalBytes > 0 ? min(1, max(0, 1 - freeBytes / totalBytes)) : nil }
+}
+
+struct BatteryStatus: Equatable {
+    enum State: Equatable { case charging, onAC, discharging }
+    var fraction: Double?
+    var state: State
+    var minutesRemaining: Int? = nil
+    /// What the whole Mac draws right now, from any source.
+    var usageWatts: Double? = nil
+    /// What flows into the battery: 0 unless it is charging, nil when unreadable.
+    var chargeWatts: Double? = nil
+
+    /// Telemetry is preferred; voltage times current is the fallback on Macs
+    /// without it. Battery power is signed: negative means it is supplying.
+    static func power(state: State, systemLoadMilliwatts: Int64?, batteryMilliwatts: Int64?,
+                      millivolts: Int64?, milliamps: Int64?) -> (usage: Double?, charge: Double?) {
+        let terminal = millivolts.flatMap { mv in milliamps.map { Double(mv) * Double($0) / 1_000_000 } }
+        var usage: Double?
+        if let systemLoadMilliwatts, systemLoadMilliwatts > 0 {
+            usage = Double(systemLoadMilliwatts) / 1000
+        } else if state == .discharging, let terminal {
+            usage = abs(terminal)
+        }
+        guard state == .charging else { return (usage, 0) }
+        return (usage, batteryMilliwatts.map { max(0, Double($0) / 1000) } ?? terminal.map { max(0, $0) })
+    }
+}
+
+/// One reading of everything tinyStats measures; nil means not available.
+struct Sample: Equatable {
+    var cpu: Double? = nil
+    var gpu: Double? = nil
+    var ram: Double? = nil
+    var net: NetworkRates? = nil
+    var battery: BatteryStatus? = nil
+    var disk: DiskSpace? = nil
+    var diskIO: DiskRates? = nil
+    var swapUsedBytes: Double? = nil
+}
+
 final class Metrics {
+    static let hasBattery = readBattery() != nil
+    private static let diskSpaceInterval: TimeInterval = 30
+
+    private var prevDisks: [UInt64: (read: UInt64, write: UInt64)]?
+    private var prevDiskTime: TimeInterval?
+    private var diskSpaceCache: (time: TimeInterval, value: DiskSpace?)?
     private var prevCPU: (user: UInt32, sys: UInt32, idle: UInt32, nice: UInt32)?
     private var prevNets: [String: (in: UInt64, out: UInt64)]?
     private var prevNetTime: TimeInterval?
@@ -144,6 +200,283 @@ final class Metrics {
         prevNetTime = now
         return NetworkRates(downloadBytesPerSecond: dIn / dt, uploadBytesPerSecond: dOut / dt)
     }
+
+    /// Reads the internal battery; nil on Macs without one.
+    private static func readBattery() -> BatteryStatus? {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
+        for source in sources {
+            guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
+                  description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType else { continue }
+            let current = (description[kIOPSCurrentCapacityKey] as? NSNumber)?.doubleValue
+            let maximum = (description[kIOPSMaxCapacityKey] as? NSNumber)?.doubleValue
+            let onAC = description[kIOPSPowerSourceStateKey] as? String == kIOPSACPowerValue
+            let charging = (description[kIOPSIsChargingKey] as? NSNumber)?.boolValue == true
+            let state: BatteryStatus.State = charging ? .charging : onAC ? .onAC : .discharging
+            let minutesKey = charging ? kIOPSTimeToFullChargeKey : kIOPSTimeToEmptyKey
+            let minutes = (description[minutesKey] as? NSNumber)?.intValue
+            var fraction: Double?
+            if let current, let maximum, maximum > 0 { fraction = min(1, max(0, current / maximum)) }
+            let power = readPower(state: state)
+            return BatteryStatus(fraction: fraction, state: state,
+                                 minutesRemaining: state != .onAC ? minutes.flatMap { $0 >= 0 ? $0 : nil } : nil,
+                                 usageWatts: power.usage, chargeWatts: power.charge)
+        }
+        return nil
+    }
+
+    private static func readPower(state: BatteryStatus.State) -> (usage: Double?, charge: Double?) {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
+        guard service != 0 else { return (nil, nil) }
+        defer { IOObjectRelease(service) }
+        func property(_ key: String) -> Any? {
+            IORegistryEntryCreateCFProperty(service, key as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue()
+        }
+        let telemetry = property("PowerTelemetryData") as? [String: Any]
+        return BatteryStatus.power(state: state,
+                                   systemLoadMilliwatts: (telemetry?["SystemLoad"] as? NSNumber)?.int64Value,
+                                   batteryMilliwatts: (telemetry?["BatteryPower"] as? NSNumber)?.int64Value,
+                                   millivolts: (property("Voltage") as? NSNumber)?.int64Value,
+                                   milliamps: (property("Amperage") as? NSNumber)?.int64Value)
+    }
+
+    /// Free space counts purgeable data, like Finder. Refreshed rarely: the
+    /// value moves slowly and the query is the most expensive one here.
+    func diskSpace() -> DiskSpace? {
+        let now = ProcessInfo.processInfo.systemUptime
+        if let cache = diskSpaceCache, now - cache.time < Self.diskSpaceInterval { return cache.value }
+        var value: DiskSpace?
+        let keys: Set<URLResourceKey> = [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey,
+                                         .volumeAvailableCapacityKey]
+        if let values = try? URL(fileURLWithPath: "/").resourceValues(forKeys: keys), let total = values.volumeTotalCapacity {
+            let important = values.volumeAvailableCapacityForImportantUsage.flatMap { $0 > 0 ? Double($0) : nil }
+            if let free = important ?? values.volumeAvailableCapacity.map(Double.init) {
+                value = DiskSpace(totalBytes: Double(total), freeBytes: free)
+            }
+        }
+        diskSpaceCache = (now, value)
+        return value
+    }
+
+    /// Bytes per second across all block devices. A device appearing or
+    /// disappearing starts a new baseline, so it never reads as a spike.
+    func diskActivity() -> DiskRates? {
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOBlockStorageDriver"),
+                                           &iterator) == KERN_SUCCESS else { return nil }
+        defer { IOObjectRelease(iterator) }
+        var current: [UInt64: (read: UInt64, write: UInt64)] = [:]
+        while true {
+            let service = IOIteratorNext(iterator)
+            guard service != 0 else { break }
+            defer { IOObjectRelease(service) }
+            var id: UInt64 = 0
+            guard IORegistryEntryGetRegistryEntryID(service, &id) == KERN_SUCCESS,
+                  let stats = IORegistryEntryCreateCFProperty(service, "Statistics" as CFString, kCFAllocatorDefault, 0)?
+                      .takeRetainedValue() as? [String: Any],
+                  let read = stats["Bytes (Read)"] as? NSNumber, let write = stats["Bytes (Write)"] as? NSNumber else { continue }
+            current[id] = (read.uint64Value, write.uint64Value)
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        defer {
+            prevDisks = current.isEmpty ? nil : current
+            prevDiskTime = current.isEmpty ? nil : now
+        }
+        guard !current.isEmpty, let prev = prevDisks, let prevTime = prevDiskTime, now > prevTime,
+              Set(prev.keys) == Set(current.keys) else { return nil }
+        var read = 0.0, write = 0.0
+        for (id, c) in current {
+            guard let p = prev[id], c.read >= p.read, c.write >= p.write else { return nil }
+            read += Double(c.read - p.read)
+            write += Double(c.write - p.write)
+        }
+        return DiskRates(readBytesPerSecond: read / (now - prevTime), writeBytesPerSecond: write / (now - prevTime))
+    }
+
+    func swapUsed() -> Double? {
+        var usage = xsw_usage()
+        var size = MemoryLayout<xsw_usage>.size
+        return sysctlbyname("vm.swapusage", &usage, &size, nil, 0) == 0 ? Double(usage.xsu_used) : nil
+    }
+
+    func sample() -> Sample {
+        Sample(cpu: cpu(), gpu: gpu(), ram: ram(), net: network(), battery: Self.readBattery(), disk: diskSpace(),
+               diskIO: diskActivity(), swapUsedBytes: swapUsed())
+    }
+}
+
+// MARK: - Metric catalogue
+
+/// Columns of the list under the tiles and sections of the menu bar picker.
+enum MetricCategory: String, CaseIterable {
+    case power = "Power", storage = "Storage", system = "System"
+}
+
+/// Text and one fill value per metric. Gauges have a natural 0...100 % scale,
+/// so only they can fill a top tile and its menu bar bar.
+enum Metric: String, CaseIterable {
+    case cpu, gpu, ram, battery, disk, network, usage, charging, diskActivity, swap
+
+    static let gauges: [Metric] = [.cpu, .gpu, .ram, .battery, .disk]
+
+    var isGauge: Bool { Self.gauges.contains(self) }
+    var needsBattery: Bool { self == .battery || self == .usage || self == .charging }
+
+    static func available(hasBattery: Bool) -> [Metric] { allCases.filter { hasBattery || !$0.needsBattery } }
+
+    /// Nil only for network, which has its own tray.
+    var category: MetricCategory? {
+        switch self {
+        case .battery, .usage, .charging: return .power
+        case .disk, .diskActivity: return .storage
+        case .cpu, .gpu, .ram, .swap: return .system
+        case .network: return nil
+        }
+    }
+
+    /// Categories in display order, leaving out any with nothing to show.
+    static func grouped(_ metrics: [Metric]) -> [(category: MetricCategory, metrics: [Metric])] {
+        MetricCategory.allCases.compactMap { category -> (category: MetricCategory, metrics: [Metric])? in
+            let members = metrics.filter { $0.category == category }
+            return members.isEmpty ? nil : (category, members)
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .cpu: return "CPU"
+        case .gpu: return "GPU"
+        case .ram: return "RAM"
+        case .battery: return "Battery"
+        case .disk: return "Disk"
+        case .network: return "Network"
+        case .usage: return "Power Usage"
+        case .charging: return "Charging"
+        case .diskActivity: return "Disk Activity"
+        case .swap: return "Swap"
+        }
+    }
+
+    var caption: String { self == .ram ? "RAM ≈" : name.uppercased() }
+
+    func fraction(_ s: Sample) -> Double? {
+        switch self {
+        case .cpu: return s.cpu
+        case .gpu: return s.gpu
+        case .ram: return s.ram
+        case .battery: return s.battery?.fraction
+        case .disk: return s.disk?.usedFraction
+        default: return nil
+        }
+    }
+
+    func isCharging(_ s: Sample) -> Bool { self == .battery && s.battery?.state == .charging }
+
+    /// Rows for the list under the tiles; disk activity takes two.
+    func cells(_ s: Sample) -> [(label: String, value: String, bolt: Bool)] {
+        switch self {
+        case .disk: return [("Free", Format.bytes(s.disk?.freeBytes), false)]
+        case .network: return []
+        case .usage: return [("Usage", Format.watts(s.battery?.usageWatts), false)]
+        case .charging: return [("Charging", Format.watts(s.battery?.chargeWatts), false)]
+        case .diskActivity:
+            return [("Read", Format.rate(s.diskIO?.readBytesPerSecond), false),
+                    ("Write", Format.rate(s.diskIO?.writeBytesPerSecond), false)]
+        case .swap: return [("Swap", Format.bytes(s.swapUsedBytes), false)]
+        default: return [(name, Format.percent(fraction(s)), isCharging(s))]
+        }
+    }
+
+    func readout(_ s: Sample) -> MenuBarReadout {
+        func compactWatts(_ value: Double?) -> String {
+            MenuBarIndicators.compactNumber(value).map { $0 + "W" } ?? "—"
+        }
+        switch self {
+        case .network: return .rates(up: s.net?.uploadBytesPerSecond, down: s.net?.downloadBytesPerSecond)
+        case .diskActivity: return .rates(up: s.diskIO?.writeBytesPerSecond, down: s.diskIO?.readBytesPerSecond)
+        case .usage: return .value(compactWatts(s.battery?.usageWatts), charging: false)
+        case .charging: return .value(compactWatts(s.battery?.chargeWatts), charging: false)
+        case .swap: return .value(MenuBarIndicators.compactRate(s.swapUsedBytes), charging: false)
+        default: return .value(Format.percent(fraction(s)).replacingOccurrences(of: " ", with: ""), charging: isCharging(s))
+        }
+    }
+
+    /// Full sentence fragment for tooltips and VoiceOver.
+    func spoken(_ s: Sample) -> String {
+        switch self {
+        case .ram: return "RAM estimated \(Format.percent(s.ram))"
+        case .battery:
+            var parts = ["Battery \(Format.percent(s.battery?.fraction))"]
+            switch s.battery?.state {
+            case .charging: parts.append("charging")
+            case .onAC: parts.append("on AC power")
+            case .discharging: parts.append("on battery")
+            case nil: break
+            }
+            if let minutes = s.battery?.minutesRemaining {
+                let time = "\(minutes / 60):" + String(format: "%02d", minutes % 60)
+                parts.append(s.battery?.state == .charging ? "\(time) until full" : "\(time) remaining")
+            }
+            return parts.joined(separator: ", ")
+        case .disk: return "Disk \(Format.percent(s.disk?.usedFraction)) used, \(Format.bytes(s.disk?.freeBytes)) free"
+        case .network: return "Upload \(Format.rate(s.net?.uploadBytesPerSecond)) · Download \(Format.rate(s.net?.downloadBytesPerSecond))"
+        case .usage: return "Power usage \(Format.watts(s.battery?.usageWatts))"
+        case .charging: return "Charging \(Format.watts(s.battery?.chargeWatts))"
+        case .diskActivity: return "Disk read \(Format.rate(s.diskIO?.readBytesPerSecond)) · Disk write \(Format.rate(s.diskIO?.writeBytesPerSecond))"
+        case .swap: return "Swap used \(Format.bytes(s.swapUsedBytes))"
+        default: return "\(name) \(Format.percent(fraction(s)))"
+        }
+    }
+}
+
+/// Which gauges fill the three top positions and what sits beside the bars.
+struct MetricLayout: Equatable {
+    static let topKey = "topMetrics"
+    static let menuBarKey = "menuBarMetric"
+    static let standardTop: [Metric] = [.cpu, .gpu, .ram]
+
+    private(set) var top: [Metric] = standardTop
+    private(set) var menuBar: Metric = .network
+
+    init() {}
+
+    /// Anything stored that is unknown, repeated or unsupported on this Mac is dropped.
+    init(storedTop: [String]?, storedMenuBar: String?, hasBattery: Bool) {
+        let usable = Metric.gauges.filter { hasBattery || !$0.needsBattery }
+        var picked: [Metric] = []
+        for raw in storedTop ?? [] {
+            if let metric = Metric(rawValue: raw), usable.contains(metric), !picked.contains(metric), picked.count < 3 {
+                picked.append(metric)
+            }
+        }
+        for metric in usable where picked.count < 3 && !picked.contains(metric) { picked.append(metric) }
+        top = picked
+        if let metric = storedMenuBar.flatMap(Metric.init(rawValue:)), hasBattery || !metric.needsBattery { menuBar = metric }
+    }
+
+    /// Picking a gauge already shown elsewhere swaps the two, so all three stay different.
+    mutating func setTop(_ metric: Metric, at slot: Int) {
+        guard metric.isGauge, top.indices.contains(slot) else { return }
+        if let other = top.firstIndex(of: metric) { top[other] = top[slot] }
+        top[slot] = metric
+    }
+
+    mutating func setMenuBar(_ metric: Metric) { menuBar = metric }
+
+    /// Everything not on a tile, so each metric appears exactly once. Network has its own tray.
+    func listed(hasBattery: Bool) -> [Metric] {
+        Metric.available(hasBattery: hasBattery).filter { !top.contains($0) && $0 != .network }
+    }
+
+    func save(to defaults: UserDefaults) {
+        defaults.set(top.map(\.rawValue), forKey: Self.topKey)
+        defaults.set(menuBar.rawValue, forKey: Self.menuBarKey)
+    }
+
+    static func stored(in defaults: UserDefaults, hasBattery: Bool) -> MetricLayout {
+        MetricLayout(storedTop: defaults.stringArray(forKey: topKey) ?? standardTop.map(\.rawValue),
+                     storedMenuBar: defaults.string(forKey: menuBarKey), hasBattery: hasBattery)
+    }
 }
 
 // MARK: - Formatting
@@ -155,21 +488,29 @@ enum Format {
         return "\(Int((min(1, max(0, fraction)) * 100).rounded())) %"
     }
 
-    static func rate(_ bps: Double?) -> String {
-        guard let bps, bps.isFinite, bps >= 0 else { return "—" }
-        let units = ["B/s", "KB/s", "MB/s", "GB/s"]
-        var value = bps
+    static func rate(_ bps: Double?) -> String { scaled(bps, units: ["B/s", "KB/s", "MB/s", "GB/s"]) }
+    /// Three-digit sizes drop the decimal; it says nothing at that scale.
+    static func bytes(_ count: Double?) -> String { scaled(count, units: ["B", "KB", "MB", "GB", "TB"], wholeFrom: 100) }
+    static func watts(_ value: Double?) -> String { fixed(value, digits: (value ?? 0) >= 100 ? 0 : 1).map { "\($0) W" } ?? "—" }
+
+    private static func scaled(_ raw: Double?, units: [String], wholeFrom: Double = .infinity) -> String {
+        guard let raw, raw.isFinite, raw >= 0 else { return "—" }
+        var value = raw
         var unit = 0
         while value >= 1000, unit < units.count - 1 {
             value /= 1000
             unit += 1
         }
+        return "\(fixed(value, digits: unit == 0 || value >= wholeFrom ? 0 : 1) ?? "—") \(units[unit])"
+    }
+
+    private static func fixed(_ value: Double?, digits: Int) -> String? {
+        guard let value, value.isFinite, value >= 0 else { return nil }
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = unit == 0 ? 0 : 1
-        formatter.maximumFractionDigits = unit == 0 ? 0 : 1
-        let number = formatter.string(from: NSNumber(value: value)) ?? "—"
-        return "\(number) \(units[unit])"
+        formatter.minimumFractionDigits = digits
+        formatter.maximumFractionDigits = digits
+        return formatter.string(from: NSNumber(value: value))
     }
 
     /// Splits "8,2 KB/s" or "23 %" into number and unit.
@@ -178,17 +519,23 @@ enum Format {
         return (String(text[..<space]), String(text[text.index(after: space)...]))
     }
 
-    static func summary(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?) -> String {
-        "CPU \(percent(cpu)) · GPU \(percent(gpu)) · RAM estimated \(percent(ram)) · Upload \(rate(net?.uploadBytesPerSecond)) · Download \(rate(net?.downloadBytesPerSecond))"
+    static func summary(_ sample: Sample, hasBattery: Bool) -> String {
+        Metric.available(hasBattery: hasBattery).map { $0.spoken(sample) }.joined(separator: " · ")
             .replacingOccurrences(of: "—", with: "Not available")
     }
 }
 
 // MARK: - Menu bar indicators
 
-// Three bars in fixed order, left to right: CPU, GPU, RAM. No letters: the
-// position names the bar; tooltip and VoiceOver carry the full names. Network
-// rates are bytes per second, upload above download.
+/// What sits beside the bars: two rates, or one chosen value.
+enum MenuBarReadout: Equatable {
+    case rates(up: Double?, down: Double?)
+    case value(String, charging: Bool)
+}
+
+// Three bars, left to right, matching the three tiles in the details. No
+// letters: the position names the bar; tooltip and VoiceOver carry the full
+// names. Rates are bytes per second, upload above download.
 enum MenuBarIndicators {
     static let barWidth: CGFloat = 4
     static let barGap: CGFloat = 3
@@ -201,8 +548,11 @@ enum MenuBarIndicators {
     static let barsWidth = 3 * barWidth + 2 * barGap
     static let size = NSSize(width: barsWidth + groupGap + rateColumn, height: 22)
     static let rateFont = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium)
+    /// A single value has the column to itself, so it can be read at a glance.
+    static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+    static let boltSize = NSSize(width: 5, height: 8)
 
-    /// Track of bar 0 (CPU), 1 (GPU) or 2 (RAM).
+    /// Track of bar 0, 1 or 2, counted from the left.
     static func track(_ index: Int) -> NSRect {
         NSRect(x: CGFloat(index) * (barWidth + barGap), y: 4, width: barWidth, height: 14)
     }
@@ -227,9 +577,35 @@ enum MenuBarIndicators {
         return (formatter.string(from: NSNumber(value: value)) ?? "—") + units[index]
     }
 
+    /// Whole numbers from 10 up, one decimal below; nil when missing.
+    static func compactNumber(_ value: Double?, locale: Locale = .current) -> String? {
+        guard let value, value.isFinite, value >= 0 else { return nil }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = locale
+        formatter.usesGroupingSeparator = false
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = value < 10 ? 1 : 0
+        return formatter.string(from: NSNumber(value: value))
+    }
+
     /// Upload on top, download below; each row keeps its own measured rate.
-    static func rateRows(_ net: NetworkRates?) -> [(arrow: String, text: String, y: CGFloat)] {
-        [("↑", compactRate(net?.uploadBytesPerSecond), 11), ("↓", compactRate(net?.downloadBytesPerSecond), 0)]
+    static func rateRows(up: Double?, down: Double?) -> [(arrow: String, text: String, y: CGFloat)] {
+        [("↑", compactRate(up), 11), ("↓", compactRate(down), 0)]
+    }
+
+    /// Lightning bolt shared by the menu bar and the details.
+    static func drawBolt(in box: NSRect, color: NSColor, flipped: Bool = false) {
+        let shape: [(CGFloat, CGFloat)] = [(0.62, 1), (0.05, 0.42), (0.44, 0.42), (0.36, 0), (0.95, 0.6), (0.55, 0.6)]
+        let path = NSBezierPath()
+        for (index, point) in shape.enumerated() {
+            let location = NSPoint(x: box.minX + point.0 * box.width,
+                                   y: box.minY + (flipped ? 1 - point.1 : point.1) * box.height)
+            if index == 0 { path.move(to: location) } else { path.line(to: location) }
+        }
+        path.close()
+        color.setFill()
+        path.fill()
     }
 
     static func drawArrow(up: Bool, in box: NSRect) {
@@ -250,9 +626,7 @@ enum MenuBarIndicators {
         path.stroke()
     }
 
-    static func image(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?) -> NSImage {
-        let values = [cpu, gpu, ram]
-        let rows = rateRows(net)
+    static func image(bars values: [Double?], readout: MenuBarReadout) -> NSImage {
         let image = NSImage(size: size, flipped: false) { _ in
             for (index, value) in values.enumerated() {
                 let track = track(index)
@@ -271,6 +645,21 @@ enum MenuBarIndicators {
                     NSRect(x: track.midX - 1.5, y: track.midY - 0.5, width: 3, height: 1).fill()
                 }
             }
+            if case let .value(text, charging) = readout {
+                let attributes: [NSAttributedString.Key: Any] = [.font: valueFont, .foregroundColor: NSColor.black]
+                let textSize = (text as NSString).size(withAttributes: attributes)
+                (text as NSString).draw(at: NSPoint(x: size.width - textSize.width, y: ((size.height - textSize.height) / 2).rounded()),
+                                        withAttributes: attributes)
+                // Only "100%" is too wide for a bolt, and that battery is all but done charging.
+                let boltX = size.width - textSize.width - boltSize.width - 1
+                if charging, boltX >= barsWidth + 2 {
+                    drawBolt(in: NSRect(x: boltX, y: ((size.height - boltSize.height) / 2).rounded(),
+                                        width: boltSize.width, height: boltSize.height), color: .black)
+                }
+                return true
+            }
+            guard case let .rates(up, down) = readout else { return true }
+            let rows = rateRows(up: up, down: down)
             let attributes: [NSAttributedString.Key: Any] = [.font: rateFont, .foregroundColor: NSColor.black]
             // Digits sit on the baseline and are cap-height tall; the arrow spans the same band.
             let baseline = -rateFont.descender + (11 - rateFont.ascender + rateFont.descender) / 2
@@ -658,6 +1047,8 @@ enum IslandStyle {
     static let rate = rounded(13, .semibold)
     static let rateUnit = NSFont.systemFont(ofSize: 10.5, weight: .medium)
     static let footer = NSFont.systemFont(ofSize: 11, weight: .medium)
+    static let listLabel = NSFont.systemFont(ofSize: 11, weight: .medium)
+    static let listValue = rounded(12, .semibold)
 
     /// SF Pro Rounded with tabular digits, so 1 Hz updates do not wobble.
     static func rounded(_ size: CGFloat, _ weight: NSFont.Weight) -> NSFont {
@@ -690,27 +1081,46 @@ enum IslandStyle {
     }
 }
 
-/// Caption, value and a thin proportional meter for one utilisation metric.
+/// Caption, value and a thin proportional meter for one gauge.
 final class MetricView: NSView {
     static let height: CGFloat = 50
-    let caption: String
+    static let boltSize = NSSize(width: 6, height: 9)
+    var metric: Metric { didSet { if metric != oldValue { describeMetric(); needsDisplay = true } } }
     var value: Double? { didSet { if value != oldValue { needsDisplay = true } } }
+    var charging = false { didSet { if charging != oldValue { needsDisplay = true } } }
 
-    init(caption: String, name: String) {
-        self.caption = caption
+    init(metric: Metric) {
+        self.metric = metric
         super.init(frame: NSRect(x: 0, y: 0, width: 70, height: Self.height))
         setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
-        setAccessibilityLabel(name)
+        describeMetric()
     }
 
     required init?(coder: NSCoder) { nil }
 
     override var isFlipped: Bool { true }
-    override func accessibilityValue() -> Any? { Format.percent(value).replacingOccurrences(of: "—", with: "Not available") }
+
+    override func accessibilityValue() -> Any? {
+        Format.percent(value).replacingOccurrences(of: "—", with: "Not available") + (charging ? ", charging" : "")
+    }
+
+    private func describeMetric() {
+        setAccessibilityLabel(metric == .ram ? "RAM estimated" : metric.name)
+        switch metric {
+        case .ram: toolTip = "Estimated usage: active, wired and compressed memory pages. Not memory pressure."
+        case .disk: toolTip = "Used space on the startup disk."
+        default: toolTip = nil
+        }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
-        IslandStyle.text(caption, IslandStyle.caption, IslandStyle.secondary, kern: 0.4).draw(at: NSPoint(x: 0, y: 0))
+        let caption = IslandStyle.text(metric.caption, IslandStyle.caption, IslandStyle.secondary, kern: 0.4)
+        caption.draw(at: NSPoint(x: 0, y: 0))
+        if charging {
+            MenuBarIndicators.drawBolt(in: NSRect(origin: NSPoint(x: ceil(caption.size().width) + 3, y: 2), size: Self.boltSize),
+                                       color: IslandStyle.secondary, flipped: true)
+        }
         IslandStyle.measure(Format.percent(value), number: IslandStyle.value, unit: IslandStyle.valueUnit)
             .draw(at: NSPoint(x: -1, y: 12))
         Self.drawMeter(in: NSRect(x: 0, y: bounds.height - 3, width: bounds.width, height: 3), value: value)
@@ -786,31 +1196,60 @@ final class NetworkView: NSView {
     }
 }
 
-/// Monochrome switch with its label; an accent colour would break the scheme.
-final class MonoSwitch: NSButton {
-    static let size = NSSize(width: 68, height: 16)
+/// One labelled column per category, on the same grid as the tiles, for every
+/// metric not on a tile. No category ever holds more than `rows` cells, so
+/// neither a sample nor a new choice can change the height.
+final class MetricListView: NSView {
+    static let headerHeight: CGFloat = 17
+    static let rowHeight: CGFloat = 30
+    static let rows = 3
+    static let height: CGFloat = headerHeight + CGFloat(rows) * rowHeight
+    var metrics: [Metric] = [] { didSet { if metrics != oldValue { needsDisplay = true } } }
+    var sample = Sample() { didSet { if sample != oldValue { needsDisplay = true } } }
 
-    convenience init(label: String) {
-        self.init(frame: NSRect(origin: .zero, size: Self.size))
-        setButtonType(.switch)
-        title = label
-        isBordered = false
-        focusRingType = .none
-        setAccessibilityRole(.checkBox)
-        setAccessibilityLabel("Show beside notch")
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel("More metrics")
     }
 
-    override func accessibilityValue() -> Any? { state == .on ? 1 : 0 }
+    required init?(coder: NSCoder) { nil }
+
+    override var isFlipped: Bool { true }
+
+    /// Numbers carry a smaller unit, like the tiles and tray; a missing value is a dim dash.
+    static func valueText(_ text: String) -> NSAttributedString {
+        IslandStyle.measure(text, number: IslandStyle.listValue, unit: IslandStyle.rateUnit)
+    }
+
+    var details: String {
+        Metric.grouped(metrics).map { group in
+            "\(group.category.rawValue): " + group.metrics.map { $0.spoken(sample) }.joined(separator: ", ")
+        }.joined(separator: "; ").replacingOccurrences(of: "—", with: "not available")
+    }
+
+    override func accessibilityValue() -> Any? { details }
+    override var toolTip: String? { get { details } set {} }
 
     override func draw(_ dirtyRect: NSRect) {
-        let on = state == .on
-        let track = NSRect(x: bounds.maxX - 22, y: ((bounds.height - 12) / 2).rounded(), width: 22, height: 12)
-        IslandStyle.drawCentered(IslandStyle.text(title, IslandStyle.footer, IslandStyle.secondary),
-                                 x: track.minX - 6, in: bounds, alignRight: true)
-        NSColor(white: 1, alpha: on ? 0.72 : 0.18).setFill()
-        NSBezierPath(roundedRect: track, xRadius: 6, yRadius: 6).fill()
-        (on ? NSColor.black : NSColor(white: 1, alpha: 0.8)).setFill()
-        NSBezierPath(ovalIn: NSRect(x: on ? track.maxX - 10.5 : track.minX + 1.5, y: track.minY + 1.5, width: 9, height: 9)).fill()
+        let column = IslandContentView.columnWidth(inner: bounds.width)
+        for (index, group) in Metric.grouped(metrics).enumerated() {
+            let x = CGFloat(index) * (column + IslandContentView.columnGap)
+            IslandStyle.text(group.category.rawValue.uppercased(), IslandStyle.caption, IslandStyle.secondary, kern: 0.4)
+                .draw(at: NSPoint(x: x, y: 0))
+            for (row, cell) in group.metrics.flatMap({ $0.cells(sample) }).enumerated() {
+                let y = Self.headerHeight + CGFloat(row) * Self.rowHeight
+                let label = IslandStyle.text(cell.label, IslandStyle.listLabel, IslandStyle.secondary)
+                label.draw(at: NSPoint(x: x, y: y))
+                if cell.bolt {
+                    MenuBarIndicators.drawBolt(in: NSRect(origin: NSPoint(x: x + ceil(label.size().width) + 3, y: y + 2),
+                                                          size: MetricView.boltSize),
+                                               color: IslandStyle.secondary, flipped: true)
+                }
+                Self.valueText(cell.value).draw(at: NSPoint(x: x, y: y + 12))
+            }
+        }
     }
 }
 
@@ -818,13 +1257,16 @@ final class MonoSwitch: NSButton {
 final class TextButton: NSButton {
     private var hovering = false { didSet { needsDisplay = true } }
     private var area: NSTrackingArea?
+    private var symbol: String?
 
-    convenience init(label: String) {
+    convenience init(label: String, symbol: String? = nil) {
         self.init(frame: .zero)
         title = label
+        self.symbol = symbol
         isBordered = false
         focusRingType = .none
         setAccessibilityRole(.button)
+        setAccessibilityLabel(label)
     }
 
     override func updateTrackingAreas() {
@@ -841,6 +1283,15 @@ final class TextButton: NSButton {
 
     override func draw(_ dirtyRect: NSRect) {
         let color = hovering || isHighlighted ? IslandStyle.primary : IslandStyle.secondary
+        if let symbol, let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+                .applying(NSImage.SymbolConfiguration(paletteColors: [color]))) {
+            let size = image.size
+            image.draw(in: NSRect(x: bounds.maxX - size.width, y: ((bounds.height - size.height) / 2).rounded(),
+                                  width: size.width, height: size.height),
+                       from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            return
+        }
         IslandStyle.drawCentered(IslandStyle.text(title, IslandStyle.footer, color), x: bounds.maxX, in: bounds, alignRight: true)
     }
 }
@@ -852,32 +1303,42 @@ final class IslandContentView: NSView {
     static let columnGap: CGFloat = 12
     static let metricsTop: CGFloat = 14
     static let networkTop: CGFloat = metricsTop + MetricView.height + 14
-    static let footerTop: CGFloat = networkTop + NetworkView.height + 12
+    static let listTop: CGFloat = networkTop + NetworkView.height + 12
+    static let footerTop: CGFloat = listTop + MetricListView.height + 8
     static let footerHeight: CGFloat = 16
     static let height: CGFloat = footerTop + footerHeight + 12
 
-    let cpu = MetricView(caption: "CPU", name: "CPU")
-    let gpu = MetricView(caption: "GPU", name: "GPU")
-    let ram = MetricView(caption: "RAM ≈", name: "RAM estimated")
+    /// The tiles and the category columns share one grid.
+    static func columnWidth(inner: CGFloat) -> CGFloat { ((inner - 2 * columnGap) / 3).rounded(.down) }
+
+    let hasBattery: Bool
+    private(set) var metricLayout = MetricLayout()
+    private var sample = Sample()
+    let tiles = MetricLayout.standardTop.map { MetricView(metric: $0) }
     let network = NetworkView(frame: .zero)
-    let notchSwitch = MonoSwitch(label: "Notch")
+    let list = MetricListView(frame: .zero)
+    let customizeButton = TextButton(label: "Settings", symbol: "gearshape")
     let quitButton = TextButton(label: "Quit")
+    private var notchAvailable = false
+    private var notchEnabled = false
     var onQuit: (() -> Void)?
     var onNotchToggle: ((Bool) -> Void)?
+    var onLayoutChange: ((MetricLayout) -> Void)?
 
-    init(width: CGFloat) {
+    init(width: CGFloat, hasBattery: Bool) {
+        self.hasBattery = hasBattery
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: Self.height))
         wantsLayer = true
         canDrawSubviewsIntoLayer = true
-        ram.toolTip = "Estimated usage: active, wired and compressed memory pages. Not memory pressure."
-        notchSwitch.target = self
-        notchSwitch.action = #selector(notchToggled)
-        notchSwitch.isHidden = true
+        customizeButton.target = self
+        customizeButton.action = #selector(customizeClicked)
+        customizeButton.toolTip = "Settings"
         quitButton.target = self
         quitButton.action = #selector(quitClicked)
         quitButton.setAccessibilityLabel("Quit tinyStats")
         quitButton.toolTip = "Quit tinyStats (⌘Q)"
-        [cpu, gpu, ram, network, notchSwitch, quitButton].forEach(addSubview)
+        (tiles as [NSView] + [network, list, customizeButton, quitButton]).forEach(addSubview)
+        list.metrics = metricLayout.listed(hasBattery: hasBattery)
         layout(width: width)
     }
 
@@ -888,15 +1349,15 @@ final class IslandContentView: NSView {
     func layout(width: CGFloat) {
         setFrameSize(NSSize(width: width, height: Self.height))
         let inner = width - 2 * Self.padding
-        let column = ((inner - 2 * Self.columnGap) / 3).rounded(.down)
-        for (index, view) in [cpu, gpu, ram].enumerated() {
+        let column = Self.columnWidth(inner: inner)
+        for (index, view) in tiles.enumerated() {
             view.frame = NSRect(x: Self.padding + CGFloat(index) * (column + Self.columnGap), y: Self.metricsTop,
                                 width: column, height: MetricView.height)
         }
         network.frame = NSRect(x: Self.padding, y: Self.networkTop, width: inner, height: NetworkView.height)
-        quitButton.frame = NSRect(x: width - Self.padding - 60, y: Self.footerTop, width: 60, height: Self.footerHeight)
-        notchSwitch.frame = NSRect(x: quitButton.frame.minX - 14 - MonoSwitch.size.width, y: Self.footerTop,
-                                   width: MonoSwitch.size.width, height: Self.footerHeight)
+        list.frame = NSRect(x: Self.padding, y: Self.listTop, width: inner, height: MetricListView.height)
+        quitButton.frame = NSRect(x: width - Self.padding - 30, y: Self.footerTop, width: 30, height: Self.footerHeight)
+        customizeButton.frame = NSRect(x: quitButton.frame.minX - 8 - 16, y: Self.footerTop, width: 16, height: Self.footerHeight)
         needsDisplay = true
     }
 
@@ -910,22 +1371,106 @@ final class IslandContentView: NSView {
                              width: ceil(size.width), height: ceil(size.height)))
     }
 
-    func update(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?) {
-        self.cpu.value = cpu
-        self.gpu.value = gpu
-        self.ram.value = ram
-        network.rates = net
+    func update(_ sample: Sample) {
+        self.sample = sample
+        for tile in tiles {
+            tile.value = tile.metric.fraction(sample)
+            tile.charging = tile.metric.isCharging(sample)
+        }
+        network.rates = sample.net
+        list.sample = sample
     }
 
-    /// The switch exists only while a connected display has a usable housing.
+    /// The set of cells stays the same size, so the island keeps its frame.
+    func setMetricLayout(_ layout: MetricLayout) {
+        metricLayout = layout
+        for (tile, metric) in zip(tiles, layout.top) { tile.metric = metric }
+        list.metrics = layout.listed(hasBattery: hasBattery)
+        update(sample)
+    }
+
+    private static let menuBarSlot = 3
+    static let notchOptionTitle = "Show Beside Notch"
+
+    /// One native menu: a submenu per tile, one for the menu bar, the notch
+    /// option where a display has one, and a way back to the default metrics.
+    func customizationMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.appearance = NSAppearance(named: .darkAqua)
+        menu.autoenablesItems = false
+        func submenu(_ title: String, slot: Int, current: Metric, choices: [Metric], sections: Bool = false) {
+            let parent = NSMenuItem(title: "\(title): \(current.name)", action: nil, keyEquivalent: "")
+            let choicesMenu = NSMenu()
+            choicesMenu.autoenablesItems = false
+            var section: MetricCategory?
+            for metric in choices {
+                if sections, let category = metric.category, category != section {
+                    choicesMenu.addItem(.sectionHeader(title: category.rawValue))
+                    section = category
+                }
+                let item = NSMenuItem(title: metric.name, action: #selector(metricPicked(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = slot
+                item.representedObject = metric.rawValue
+                item.state = metric == current ? .on : .off
+                choicesMenu.addItem(item)
+            }
+            parent.submenu = choicesMenu
+            menu.addItem(parent)
+        }
+        let gauges = Metric.gauges.filter { hasBattery || !$0.needsBattery }
+        for (slot, title) in ["Top Left", "Top Middle", "Top Right"].enumerated() {
+            submenu(title, slot: slot, current: metricLayout.top[slot], choices: gauges)
+        }
+        menu.addItem(.separator())
+        let others = Metric.available(hasBattery: hasBattery).filter { $0 != .network }
+        submenu("Menu Bar", slot: Self.menuBarSlot, current: metricLayout.menuBar,
+                choices: [.network] + Metric.grouped(others).flatMap { $0.metrics }, sections: true)
+        if notchAvailable {
+            let notch = NSMenuItem(title: Self.notchOptionTitle, action: #selector(notchToggled), keyEquivalent: "")
+            notch.target = self
+            notch.state = notchEnabled ? .on : .off
+            menu.addItem(notch)
+        }
+        menu.addItem(.separator())
+        let reset = NSMenuItem(title: "Reset to Defaults", action: #selector(resetPicked), keyEquivalent: "")
+        reset.target = self
+        reset.isEnabled = metricLayout != MetricLayout()
+        menu.addItem(reset)
+        return menu
+    }
+
+    private func change(_ layout: MetricLayout) {
+        guard layout != metricLayout else { return }
+        setMetricLayout(layout)
+        onLayoutChange?(layout)
+    }
+
+    @objc private func metricPicked(_ item: NSMenuItem) {
+        guard let raw = item.representedObject as? String, let metric = Metric(rawValue: raw) else { return }
+        var layout = metricLayout
+        if item.tag == Self.menuBarSlot { layout.setMenuBar(metric) } else { layout.setTop(metric, at: item.tag) }
+        change(layout)
+    }
+
+    @objc private func resetPicked() { change(MetricLayout()) }
+
+    @objc private func customizeClicked() {
+        customizationMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: customizeButton.bounds.maxY + 4), in: customizeButton)
+    }
+
+    /// The menu offers this only while a connected display has a usable housing.
     func setNotchOption(available: Bool, enabled: Bool) {
-        notchSwitch.state = enabled ? .on : .off
-        notchSwitch.isEnabled = available
-        notchSwitch.isHidden = !available
+        notchAvailable = available
+        notchEnabled = enabled
     }
 
     @objc private func quitClicked() { onQuit?() }
-    @objc private func notchToggled() { onNotchToggle?(notchSwitch.state == .on) }
+
+    @objc private func notchToggled() {
+        notchEnabled.toggle()
+        onNotchToggle?(notchEnabled)
+    }
 }
 
 // MARK: - Details island
@@ -1312,7 +1857,8 @@ final class App: NSObject, NSApplicationDelegate {
     static let notchDefaultsKey = "showAtNotch"
     let status = NSStatusBar.system.statusItem(withLength: MenuBarIndicators.size.width + 8)
     let metrics = Metrics()
-    let content = IslandContentView(width: IslandLayout.menuBarWidth)
+    let content = IslandContentView(width: IslandLayout.menuBarWidth, hasBattery: Metrics.hasBattery)
+    private var lastSample = Sample()
     private lazy var presenter = IslandPresenter(content: content)
     private lazy var wingPanel = WingPanel()
     private var wing: NotchWing?
@@ -1328,6 +1874,11 @@ final class App: NSObject, NSApplicationDelegate {
         content.onNotchToggle = { [weak self] enabled in
             UserDefaults.standard.set(enabled, forKey: Self.notchDefaultsKey)
             self?.updatePlacement()
+        }
+        content.setMetricLayout(.stored(in: .standard, hasBattery: Metrics.hasBattery))
+        content.onLayoutChange = { [weak self] layout in
+            layout.save(to: .standard)
+            self?.refreshIndicator()
         }
         wingPanel.wingView.setAccessibilityLabel("tinyStats")
         wingPanel.wingView.onClick = { [weak self] in self?.toggleDetails() }
@@ -1373,13 +1924,17 @@ final class App: NSObject, NSApplicationDelegate {
     }
 
     private func sample() {
-        let cpu = metrics.cpu()
-        let gpu = metrics.gpu()
-        let ram = metrics.ram()
-        let rates = metrics.network()
-        content.update(cpu: cpu, gpu: gpu, ram: ram, net: rates)
-        let summary = Format.summary(cpu: cpu, gpu: gpu, ram: ram, net: rates)
-        let image = MenuBarIndicators.image(cpu: cpu, gpu: gpu, ram: ram, net: rates)
+        lastSample = metrics.sample()
+        content.update(lastSample)
+        refreshIndicator()
+    }
+
+    /// Also runs on a layout change, so a new choice shows without waiting for the next sample.
+    private func refreshIndicator() {
+        let layout = content.metricLayout
+        let summary = Format.summary(lastSample, hasBattery: Metrics.hasBattery)
+        let image = MenuBarIndicators.image(bars: layout.top.map { $0.fraction(lastSample) },
+                                            readout: layout.menuBar.readout(lastSample))
         status.button?.image = image
         status.button?.toolTip = summary
         status.button?.setAccessibilityValue(summary)

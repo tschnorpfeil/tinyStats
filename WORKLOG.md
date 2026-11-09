@@ -237,3 +237,12 @@ Delivered behavior commit 20cd416 to GitHub main, retaining the user-requested d
 - [x] Update language assertions and regenerate all README renderings with an English locale.
 - [x] Native tests, installer tests, rendering and build passed. Numeric formatting in the app still follows the system locale.
 Historical commit messages and stable bundle identifiers are preserved.
+
+## Battery, disk and customizable metrics
+User request: add battery (current usage, charging), disk and other relevant metrics to the list below the tiles; let the user choose the three top metrics and the one menu bar metric that replaces network.
+- [x] New readings, none needing new permissions: battery charge/state (IOPS), system usage and charge rate (AppleSmartBattery PowerTelemetryData, voltage x current fallback), startup disk space (cached 30 s), block-device read/write, swap used.
+- [x] Tiles and bars take any gauge (CPU, GPU, RAM, Battery, Disk). Rates have no scale, so they cannot fill a bar. Picking a gauge already shown swaps the two.
+- [x] Every metric appears once: on a tile or in the list, which groups them into Power, Storage and System columns on the tile grid. No column can exceed three cells, whatever is on the tiles, so the open island keeps its frame.
+- [x] Gear in the footer opens one native menu; choices persist in UserDefaults (`topMetrics`, `menuBarMetric`), sanitized on load. Defaults match the previous display.
+- [x] The notch option moved from a footer switch into the gear menu as "Show Beside Notch", offered only while a display has a usable housing.
+Temperature and fan speed left out: they need private SMC access.

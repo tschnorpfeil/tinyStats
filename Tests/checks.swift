@@ -36,14 +36,18 @@ assert(Format.rate(1500).hasSuffix(" KB/s"))
 assert(Format.rate(1_500_000).hasSuffix(" MB/s"))
 assert(Format.rate(1_500_000_000).hasSuffix(" GB/s"))
 assert(Format.split("23 %") == ("23", "%") && Format.split("8,2 KB/s") == ("8,2", "KB/s") && Format.split("—") == ("—", ""))
-let summary = Format.summary(cpu: nil, gpu: 0, ram: 1, net: nil)
+let summary = Format.summary(Sample(cpu: nil, gpu: 0, ram: 1, net: nil), hasBattery: true)
 assert(summary.contains("CPU Not available") && summary.contains("GPU 0 %") && summary.contains("Download Not available"))
-let ordered = Format.summary(cpu: 0, gpu: 0, ram: 0, net: NetworkRates(downloadBytesPerSecond: 2_000, uploadBytesPerSecond: 3_000_000))
-assert(ordered.hasSuffix("Upload 3,0 MB/s · Download 2,0 KB/s") || ordered.hasSuffix("Upload 3.0 MB/s · Download 2.0 KB/s"),
+let ordered = Format.summary(Sample(cpu: 0, gpu: 0, ram: 0, net: NetworkRates(downloadBytesPerSecond: 2_000, uploadBytesPerSecond: 3_000_000)), hasBattery: true)
+assert(ordered.contains("Upload 3,0 MB/s · Download 2,0 KB/s") || ordered.contains("Upload 3.0 MB/s · Download 2.0 KB/s"),
        "Upload is read first and keeps its own rate")
 print("PASS: live CPU/RAM/network samples, baseline regression, formatting incl. missing vs zero")
 
 let app = NSApplication.shared
+
+func indicatorImage(cpu: Double?, gpu: Double?, ram: Double?, net: NetworkRates?) -> NSImage {
+    MenuBarIndicators.image(bars: [cpu, gpu, ram], readout: Metric.network.readout(Sample(net: net)))
+}
 
 // MARK: Menu bar indicators: three bars without letters, then upload over download
 
@@ -63,7 +67,7 @@ assert(indicatorSize.width == MenuBarIndicators.barsWidth + MenuBarIndicators.gr
        indicatorSize.width <= 60, "Without letters the image is bars, one gap and the rate column, nothing else")
 assert(NotchWing.wingWidth == NotchWing.indicatorInset + indicatorSize.width + 10, "The wing shrinks with the image")
 for value: Double? in [nil, 0, 0.07, 0.81, 1, .nan] {
-    let image = MenuBarIndicators.image(cpu: value, gpu: value, ram: value, net: nil)
+    let image = indicatorImage(cpu: value, gpu: value, ram: value, net: nil)
     assert(image.isTemplate && image.size == indicatorSize)
 }
 let rateColumn = MenuBarIndicators.rateColumn
@@ -75,7 +79,7 @@ for locale in [Locale(identifier: "de_DE"), Locale(identifier: "en_US")] {
         assert(width + arrowWidth + 2 <= rateColumn, "Arrow and localized rate need at least 2pt separation")
     }
 }
-let rows = MenuBarIndicators.rateRows(NetworkRates(downloadBytesPerSecond: 0, uploadBytesPerSecond: 1_500_000))
+let rows = MenuBarIndicators.rateRows(up: 1_500_000, down: 0)
 assert(rows.count == 2 && rows[0].arrow == "↑" && rows[0].y > rows[1].y && rows[1].arrow == "↓",
        "Upload row on top, download row below")
 assert(rows[0].text == MenuBarIndicators.compactRate(1_500_000) && rows[1].text == "0B", "Rows keep their own measured rate")
@@ -103,7 +107,7 @@ func ink(_ rep: NSBitmapImageRep, _ rect: NSRect) -> (mean: CGFloat, max: CGFloa
     }
     return (sum / max(count, 1), peak)
 }
-let fullBars = alphaMap(MenuBarIndicators.image(cpu: 1, gpu: 1, ram: 1, net: nil))
+let fullBars = alphaMap(indicatorImage(cpu: 1, gpu: 1, ram: 1, net: nil))
 var runs: [Int] = [], inRun = false
 for px in 0..<Int(MenuBarIndicators.barsWidth * 2) {
     let column = ink(fullBars, NSRect(x: CGFloat(px) / 2, y: 4, width: 0.5, height: 14)).mean
@@ -113,7 +117,7 @@ for px in 0..<Int(MenuBarIndicators.barsWidth * 2) {
 assert(runs == [8, 8, 8], "Exactly three narrow bars, each \(MenuBarIndicators.barWidth) pt")
 assert(ink(fullBars, NSRect(x: MenuBarIndicators.barsWidth, y: 0, width: MenuBarIndicators.groupGap, height: 22)).max == 0,
        "Nothing between the bars and the rates")
-let mixed = alphaMap(MenuBarIndicators.image(cpu: 1, gpu: 0, ram: nil, net: nil))
+let mixed = alphaMap(indicatorImage(cpu: 1, gpu: 0, ram: nil, net: nil))
 let cpuBar = MenuBarIndicators.track(0), gpuBar = MenuBarIndicators.track(1), ramBar = MenuBarIndicators.track(2)
 assert(ink(mixed, cpuBar.insetBy(dx: 1, dy: 2)).mean > 0.95, "CPU (left) full at 100 %")
 let gpuInk = ink(mixed, gpuBar.insetBy(dx: 1, dy: 2))
@@ -122,10 +126,10 @@ assert(ink(mixed, NSRect(x: ramBar.minX, y: ramBar.minY, width: ramBar.width, he
        ink(mixed, NSRect(x: ramBar.minX, y: ramBar.maxY - 5, width: ramBar.width, height: 5)).max == 0 &&
        ink(mixed, NSRect(x: ramBar.minX, y: ramBar.midY - 1, width: ramBar.width, height: 2)).max > 0.5,
        "RAM (right) missing: a dash instead of the track, distinct from 0 %")
-let half = alphaMap(MenuBarIndicators.image(cpu: 0.5, gpu: nil, ram: nil, net: nil))
+let half = alphaMap(indicatorImage(cpu: 0.5, gpu: nil, ram: nil, net: nil))
 assert(ink(half, NSRect(x: cpuBar.minX + 1, y: cpuBar.minY + 1, width: 2, height: 5)).mean > 0.95 &&
        ink(half, NSRect(x: cpuBar.minX + 1, y: cpuBar.maxY - 6, width: 2, height: 5)).max < 0.35, "Fill height follows the value")
-let rates = alphaMap(MenuBarIndicators.image(cpu: nil, gpu: nil, ram: nil,
+let rates = alphaMap(indicatorImage(cpu: nil, gpu: nil, ram: nil,
                                              net: NetworkRates(downloadBytesPerSecond: 999_000_000, uploadBytesPerSecond: 0)))
 let rateX = MenuBarIndicators.barsWidth + MenuBarIndicators.groupGap
 func inkWidth(_ y: CGFloat) -> CGFloat {
@@ -320,7 +324,7 @@ func census(_ rep: NSBitmapImageRep) -> (white: Int, colored: Int) {
 
 let wingView = WingView(frame: NSRect(origin: .zero, size: wing.frame.size))
 wingView.wing = wing
-wingView.indicator = MenuBarIndicators.image(cpu: 1, gpu: 0.5, ram: nil,
+wingView.indicator = indicatorImage(cpu: 1, gpu: 0.5, ram: nil,
                                             net: NetworkRates(downloadBytesPerSecond: 1_500_000, uploadBytesPerSecond: 0))
 let wingPixels = pixels(of: wingView)
 assert(isBlack(color(wingPixels, edge + 1, 0.2)) && color(wingPixels, edge + 4, 3).alphaComponent < 0.01,
@@ -467,46 +471,54 @@ print("PASS: spring opening/closing/reversal continuity, choreography ranges, st
 // MARK: Content: fixed layout, fits all states, no re-layout on samples
 
 for width in [IslandLayout.minimumWidth, notchLayout.width, IslandLayout.menuBarWidth] {
-    let content = IslandContentView(width: width)
+    let content = IslandContentView(width: width, hasBattery: true)
     content.setNotchOption(available: true, enabled: true)
-    let column = content.cpu.frame.width
+    let column = content.tiles[0].frame.width
     let widest = IslandStyle.measure(Format.percent(1), number: IslandStyle.value, unit: IslandStyle.valueUnit).size().width
     assert(widest <= column, "100 % fits a column at width \(width)")
     let rate = IslandStyle.measure(Format.rate(999_949_999), number: IslandStyle.rate, unit: IslandStyle.rateUnit).size().width
     assert(25 + rate <= content.network.frame.width / 2 - 4, "Longest rate fits half the tray at width \(width)")
-    assert(content.notchSwitch.frame.maxX <= content.quitButton.frame.minX && content.notchSwitch.frame.minX >= 16 + 60,
+    assert(content.customizeButton.frame.maxX <= content.quitButton.frame.minX && content.customizeButton.frame.minX >= 16 + 60,
            "Footer items do not collide at width \(width)")
+    assert(content.list.frame.minX == content.tiles[0].frame.minX && IslandContentView.columnWidth(inner: content.list.frame.width) == column,
+           "Category columns line up under the tiles at width \(width)")
     let frames = content.subviews.map(\.frame)
     for sample in [(nil, nil, nil, nil), (0.0, 0.0, 0.0, NetworkRates(downloadBytesPerSecond: 0, uploadBytesPerSecond: 0)),
                    (1.0, 0.99, 1.0, NetworkRates(downloadBytesPerSecond: 999_499_999, uploadBytesPerSecond: 1e12))] as [(Double?, Double?, Double?, NetworkRates?)] {
-        content.update(cpu: sample.0, gpu: sample.1, ram: sample.2, net: sample.3)
+        content.update(Sample(cpu: sample.0, gpu: sample.1, ram: sample.2, net: sample.3))
         assert(content.subviews.map(\.frame) == frames, "Samples never re-layout")
     }
     for view in content.subviews { assert(content.bounds.contains(view.frame)) }
 }
-let controls = IslandContentView(width: notchLayout.width)
+let controls = IslandContentView(width: notchLayout.width, hasBattery: true)
+func notchOption() -> NSMenuItem? { controls.customizationMenu().items.first { $0.title == IslandContentView.notchOptionTitle } }
 controls.setNotchOption(available: false, enabled: true)
-assert(controls.notchSwitch.isHidden && !controls.notchSwitch.isEnabled)
+assert(notchOption() == nil, "Without a housing the menu does not offer the notch")
 controls.setNotchOption(available: true, enabled: false)
-assert(!controls.notchSwitch.isHidden && controls.notchSwitch.isEnabled && controls.notchSwitch.state == .off)
+assert(notchOption()?.state == .off && notchOption()?.isEnabled == true)
 var toggled: Bool?
 controls.onNotchToggle = { toggled = $0 }
-controls.notchSwitch.performClick(nil)
-assert(toggled == true && controls.notchSwitch.state == .on)
+let notchMenu = controls.customizationMenu()
+notchMenu.performActionForItem(at: notchMenu.indexOfItem(withTitle: IslandContentView.notchOptionTitle))
+assert(toggled == true && notchOption()?.state == .on, "The menu item turns it on and shows its new state")
+let offMenu = controls.customizationMenu()
+offMenu.performActionForItem(at: offMenu.indexOfItem(withTitle: IslandContentView.notchOptionTitle))
+assert(toggled == false && notchOption()?.state == .off, "The same item turns it back off")
+assert(notchMenu.items.map(\.title).firstIndex(of: IslandContentView.notchOptionTitle) == 5 && notchMenu.items[4].title.hasPrefix("Menu Bar"),
+       "The option sits directly below the menu bar choice")
 var quit = 0
 controls.onQuit = { quit += 1 }
 controls.quitButton.performClick(nil)
-assert(quit == 1 && controls.notchSwitch.accessibilityRole() == .checkBox && controls.quitButton.accessibilityRole() == .button)
-assert(controls.notchSwitch.accessibilityValue() as? Int == 1)
-controls.update(cpu: nil, gpu: 0, ram: 0.5, net: nil)
-assert(controls.cpu.accessibilityValue() as? String == "Not available" && controls.gpu.accessibilityValue() as? String == "0 %")
+assert(quit == 1 && controls.quitButton.accessibilityRole() == .button)
+controls.update(Sample(cpu: nil, gpu: 0, ram: 0.5, net: nil))
+assert(controls.tiles[0].accessibilityValue() as? String == "Not available" && controls.tiles[1].accessibilityValue() as? String == "0 %")
 assert((controls.network.accessibilityValue() as? String)?.contains("not available") == true)
 let entries = NetworkView.entries(NetworkRates(downloadBytesPerSecond: 1, uploadBytesPerSecond: 2))
 assert(entries.map(\.name) == ["Upload", "Download"] && entries.map(\.symbol) == ["arrow.up", "arrow.down"] &&
        entries.map(\.value) == [2, 1], "Tray reads upload first (left), each with its own rate")
-controls.update(cpu: 0, gpu: 0, ram: 0, net: NetworkRates(downloadBytesPerSecond: 0, uploadBytesPerSecond: 1_000))
+controls.update(Sample(cpu: 0, gpu: 0, ram: 0, net: NetworkRates(downloadBytesPerSecond: 0, uploadBytesPerSecond: 1_000)))
 assert((controls.network.accessibilityValue() as? String)?.hasPrefix("Upload 1") == true)
-print("PASS: content fits min/notch/menu-bar widths, no re-layout on samples, switch, quit, accessibility values")
+print("PASS: content fits min/notch/menu-bar widths, no re-layout on samples, notch option, quit, accessibility values")
 
 // MARK: Interaction hit paths
 
@@ -551,7 +563,7 @@ for step in 0...103 {
 }
 wingPanel.follow(attach: 0)
 
-let presenter = IslandPresenter(content: IslandContentView(width: notchLayout.width))
+let presenter = IslandPresenter(content: IslandContentView(width: notchLayout.width, hasBattery: true))
 let panel = presenter.panel
 assert(panel.contentView === presenter.view && !presenter.isPresented && presenter.spring.isSettled)
 assert(panel.styleMask.contains(.nonactivatingPanel) && panel.canBecomeKey && !panel.canBecomeMain)
@@ -574,9 +586,9 @@ print("PASS: routing (Escape, ⌘Q, inside, outside, source), wing hit paths, pa
 
 // MARK: Rendered island (native offscreen render, not a live capture)
 
-let islandContent = IslandContentView(width: notchLayout.width)
+let islandContent = IslandContentView(width: notchLayout.width, hasBattery: true)
 islandContent.setNotchOption(available: true, enabled: true)
-islandContent.update(cpu: 0.23, gpu: 0.07, ram: 0.79, net: NetworkRates(downloadBytesPerSecond: 8_200, uploadBytesPerSecond: 4_100))
+islandContent.update(Sample(cpu: 0.23, gpu: 0.07, ram: 0.79, net: NetworkRates(downloadBytesPerSecond: 8_200, uploadBytesPerSecond: 4_100)))
 let island = IslandView(content: islandContent)
 island.configure(notchLayout)
 island.setProgress(0)
@@ -607,8 +619,8 @@ assert(!notchLayout.path(at: 1).contains(NSPoint(x: body.minX - 1, y: capTestPoi
 assert(!barLayout.path(at: 1).contains(NSPoint(x: barLayout.finalBodyRect.midX, y: barLayout.frame.height + 1)), "Normal menu bar gets no housing cap")
 print("PASS: expanded housing corner gap filled, collapsed and menu-bar silhouettes unchanged")
 
-let floatingContent = IslandContentView(width: barLayout.width)
-floatingContent.update(cpu: 0.09, gpu: 0, ram: 0.55, net: NetworkRates(downloadBytesPerSecond: 1_100, uploadBytesPerSecond: 3_100))
+let floatingContent = IslandContentView(width: barLayout.width, hasBattery: true)
+floatingContent.update(Sample(cpu: 0.09, gpu: 0, ram: 0.55, net: NetworkRates(downloadBytesPerSecond: 1_100, uploadBytesPerSecond: 3_100)))
 let floatingView = IslandView(content: floatingContent)
 floatingView.configure(barLayout)
 floatingView.setProgress(1)
@@ -619,3 +631,193 @@ if let target = ProcessInfo.processInfo.environment["TINYSTATS_FLOATING_RENDER_P
     try! floatingPixels.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: target))
 }
 print("PASS: normal menu bar floats 6pt below source with rounded corners; notch geometry retained")
+
+// MARK: New metrics: readings, catalogue, customization
+
+let probe = Metrics()
+_ = probe.diskActivity()
+Thread.sleep(forTimeInterval: 0.2)
+let liveDisk = probe.diskActivity()
+assert(liveDisk != nil && liveDisk!.readBytesPerSecond >= 0 && liveDisk!.writeBytesPerSecond >= 0, "Second disk sample yields rates")
+assert(probe.diskSpace().flatMap(\.usedFraction).map { (0...1).contains($0) } == true, "Startup disk is measurable")
+assert(probe.swapUsed().map { $0 >= 0 } == true)
+let liveSample = probe.sample()
+assert((liveSample.battery != nil) == Metrics.hasBattery, "Battery appears exactly when this Mac has one")
+if let battery = liveSample.battery {
+    assert(battery.fraction.map { (0...1).contains($0) } == true)
+    print("INFO: battery \(battery)")
+}
+
+// A real reading from this Mac: 35 W system load, battery supplying 3.8 W, stored as a wrapped unsigned.
+let wrappedPower = Int64(truncatingIfNeeded: UInt64(18446744073709547805))
+assert(wrappedPower == -3811)
+let onACPower = BatteryStatus.power(state: .onAC, systemLoadMilliwatts: 34979, batteryMilliwatts: wrappedPower, millivolts: 12000, milliamps: -300)
+assert(onACPower.usage == 34.979 && onACPower.charge == 0, "Usage is the whole Mac; 0 W into the battery unless charging")
+let chargingPower = BatteryStatus.power(state: .charging, systemLoadMilliwatts: 20000, batteryMilliwatts: 25000, millivolts: 12000, milliamps: 2000)
+assert(chargingPower.usage == 20 && chargingPower.charge == 25, "Telemetry wins over voltage times current")
+let fallbackPower = BatteryStatus.power(state: .discharging, systemLoadMilliwatts: nil, batteryMilliwatts: nil, millivolts: 12000, milliamps: -1000)
+assert(fallbackPower.usage == 12 && fallbackPower.charge == 0, "Discharge current is signed; usage is its magnitude")
+assert(BatteryStatus.power(state: .charging, systemLoadMilliwatts: nil, batteryMilliwatts: wrappedPower, millivolts: nil, milliamps: nil).charge == 0,
+       "A negative reading is never a charge rate")
+assert(BatteryStatus.power(state: .charging, systemLoadMilliwatts: nil, batteryMilliwatts: nil, millivolts: nil, milliamps: nil).charge == nil,
+       "Charging with no reading is unknown, not 0 W")
+assert(DiskSpace(totalBytes: 100, freeBytes: 25).usedFraction == 0.75 && DiskSpace(totalBytes: 0, freeBytes: 0).usedFraction == nil)
+
+assert(Format.bytes(412_000_000_000) == "412 GB" && Format.bytes(nil) == "—" && Format.bytes(0) == "0 B" && Format.bytes(24_000_000_000).hasSuffix(" GB") && Format.bytes(2e12).hasSuffix(" TB"))
+assert(Format.watts(nil) == "—" && Format.watts(.nan) == "—" && Format.watts(0).hasSuffix(" W"))
+
+let plugged = Sample(battery: BatteryStatus(fraction: 1, state: .onAC, usageWatts: 35, chargeWatts: 0))
+assert(Metric.charging.cells(plugged)[0].value == Format.watts(0) && Metric.usage.cells(plugged)[0].value == Format.watts(35), "Both rows always read in watts")
+assert(Metric.charging.readout(plugged) == .value("0W", charging: false))
+let chargingSample = Sample(battery: BatteryStatus(fraction: 0.84, state: .charging, minutesRemaining: 80, usageWatts: 20, chargeWatts: 23.1))
+assert(Metric.charging.cells(chargingSample)[0].value == Format.watts(23.1))
+assert(Metric.battery.isCharging(chargingSample) && Metric.battery.cells(chargingSample)[0].bolt)
+assert(Metric.battery.readout(chargingSample) == .value("84%", charging: true))
+assert(Metric.battery.spoken(chargingSample) == "Battery 84 %, charging, 1:20 until full")
+assert(Metric.charging.cells(Sample())[0].value == "—", "No battery reading is not the same as not charging")
+
+assert(!Metric.available(hasBattery: false).contains(where: \.needsBattery), "Desktops are not offered battery metrics")
+assert(Format.summary(Sample(), hasBattery: false).contains("Battery") == false)
+
+var chosen = MetricLayout()
+assert(chosen.top == [.cpu, .gpu, .ram] && chosen.menuBar == .network, "Unchanged for anyone who never customizes")
+chosen.setTop(.battery, at: 1)
+assert(chosen.top == [.cpu, .battery, .ram])
+chosen.setTop(.cpu, at: 2)
+assert(chosen.top == [.ram, .battery, .cpu], "Picking a shown gauge swaps, so all three stay different")
+chosen.setTop(.network, at: 0)
+assert(chosen.top == [.ram, .battery, .cpu], "Rates have no scale, so they cannot fill a bar")
+chosen.setTop(.disk, at: 9)
+assert(chosen.top == [.ram, .battery, .cpu])
+assert(MetricLayout(storedTop: ["disk", "disk", "nonsense", "cpu"], storedMenuBar: "swap", hasBattery: true).top == [.disk, .cpu, .gpu])
+assert(MetricLayout(storedTop: ["disk", "disk", "nonsense", "cpu"], storedMenuBar: "swap", hasBattery: true).menuBar == .swap)
+assert(MetricLayout(storedTop: nil, storedMenuBar: "load", hasBattery: true).menuBar == .network, "A saved metric that no longer exists falls back to network")
+let movedToDesktop = MetricLayout(storedTop: ["battery", "disk", "cpu"], storedMenuBar: "usage", hasBattery: false)
+assert(movedToDesktop.top == [.disk, .cpu, .gpu] && movedToDesktop.menuBar == .network, "Settings for a battery fall back on a desktop")
+
+let suite = "tinystats.checks.\(ProcessInfo.processInfo.processIdentifier)"
+let defaults = UserDefaults(suiteName: suite)!
+assert(MetricLayout.stored(in: defaults, hasBattery: true) == MetricLayout(), "First launch shows the original metrics")
+var saved = MetricLayout()
+saved.setTop(.disk, at: 0)
+saved.setMenuBar(.battery)
+saved.save(to: defaults)
+assert(MetricLayout.stored(in: defaults, hasBattery: true) == saved, "A choice survives a restart")
+defaults.removePersistentDomain(forName: suite)
+
+// Related metrics sit together, in the same order everywhere.
+let standardGroups = Metric.grouped(MetricLayout().listed(hasBattery: true))
+assert(standardGroups.map { $0.category } == [.power, .storage, .system])
+assert(standardGroups.map { $0.metrics } == [[.battery, .usage, .charging], [.disk, .diskActivity], [.swap]])
+assert(Metric.grouped(MetricLayout(storedTop: nil, storedMenuBar: nil, hasBattery: false).listed(hasBattery: false)).map { $0.category } == [.storage, .system],
+       "No empty Power column on a desktop")
+assert(Metric.allCases.allSatisfy { ($0.category == nil) == ($0 == .network) }, "Only network, with its own tray, has no category")
+let freeCell = Metric.disk.cells(Sample(disk: DiskSpace(totalBytes: 994_000_000_000, freeBytes: 412_000_000_000)))[0]
+assert(freeCell.label == "Free" && freeCell.value == "412 GB", "Under the Storage heading the row only needs to say what it counts")
+let spokenList = MetricListView(frame: .zero)
+spokenList.metrics = MetricLayout().listed(hasBattery: true)
+spokenList.sample = chargingSample
+assert(spokenList.details.hasPrefix("Power: Battery 84 %") && spokenList.details.contains("; Storage: ") && spokenList.details.contains("; System: Swap"),
+       "VoiceOver and the tooltip name the categories too")
+
+// Every arrangement of gauges on the tiles fits: no column outgrows the panel.
+for hasBattery in [true, false] {
+    let gauges = Metric.gauges.filter { hasBattery || !$0.needsBattery }
+    for first in gauges { for second in gauges where second != first { for third in gauges where third != first && third != second {
+        let layout = MetricLayout(storedTop: [first, second, third].map(\.rawValue), storedMenuBar: nil, hasBattery: hasBattery)
+        assert(layout.top == [first, second, third])
+        let listed = layout.listed(hasBattery: hasBattery)
+        assert(Set(layout.top + listed) == Set(Metric.available(hasBattery: hasBattery).filter { $0 != .network }), "Each metric appears once, wherever it is")
+        assert(layout.top.allSatisfy { !listed.contains($0) }, "Never on a tile and in the list")
+        for group in Metric.grouped(listed) {
+            assert(group.metrics.flatMap { $0.cells(Sample()) }.count <= MetricListView.rows,
+                   "\(group.category) fits its column for \(layout.top), so the open island keeps its frame")
+        }
+        let view = IslandContentView(width: IslandLayout.minimumWidth, hasBattery: hasBattery)
+        view.setMetricLayout(layout)
+        assert(view.frame.height == IslandContentView.height)
+        for tile in view.tiles {
+            let caption = IslandStyle.text(tile.metric.caption, IslandStyle.caption, IslandStyle.secondary, kern: 0.4).size().width
+            assert(caption + 3 + MetricView.boltSize.width <= tile.frame.width, "\(tile.metric) caption and bolt fit a tile")
+        }
+    } } }
+}
+
+let widestSample = Sample(cpu: 1, gpu: 1, ram: 1, battery: BatteryStatus(fraction: 1, state: .charging, usageWatts: 99.9, chargeWatts: 99.9),
+                          disk: DiskSpace(totalBytes: 2e15, freeBytes: 999_400_000_000),
+                          diskIO: DiskRates(readBytesPerSecond: 999_900_000, writeBytesPerSecond: 999_900_000),
+                          swapUsedBytes: 999_900_000_000)
+let narrowestColumn = IslandContentView.columnWidth(inner: IslandLayout.minimumWidth - 2 * IslandContentView.padding)
+for category in MetricCategory.allCases {
+    let header = IslandStyle.text(category.rawValue.uppercased(), IslandStyle.caption, IslandStyle.secondary, kern: 0.4).size().width
+    assert(header <= narrowestColumn, "\(category) heading fits a column at the narrowest width")
+}
+for metric in Metric.allCases {
+    for cell in metric.cells(widestSample) {
+        let label = IslandStyle.text(cell.label, IslandStyle.listLabel, IslandStyle.secondary).size().width
+        let value = MetricListView.valueText(cell.value).size().width
+        assert(label + (cell.bolt ? 3 + MetricView.boltSize.width : 0) <= narrowestColumn && value <= narrowestColumn,
+               "\(cell.label) \(cell.value) fits a column at the narrowest width (\(narrowestColumn), value \(value))")
+    }
+}
+
+// The menu bar's single value must fit the column the network rates already used.
+for locale in [Locale(identifier: "de_DE"), Locale(identifier: "en_US")] {
+    for value in [0.0, 9.94, 9.96, 99.9, 999.4] {
+        let text = (MenuBarIndicators.compactNumber(value, locale: locale)! + "W") as NSString
+        assert(text.size(withAttributes: [.font: MenuBarIndicators.valueFont]).width <= rateColumn, "\(text) fits")
+    }
+}
+for text in ["100%", "≥1T", "999M", "—"] {
+    let width = (text as NSString).size(withAttributes: [.font: MenuBarIndicators.valueFont]).width
+    assert(width <= rateColumn, "\(text) fits the column")
+}
+let single = alphaMap(MenuBarIndicators.image(bars: [1, 1, 1], readout: .value("84%", charging: false)))
+assert(single.size == indicatorSize, "Choosing a value never changes the indicator's width")
+assert(ink(single, NSRect(x: rateX, y: 0, width: indicatorSize.width - rateX, height: 22)).max > 0.5, "The value is drawn")
+assert(ink(single, NSRect(x: MenuBarIndicators.barsWidth, y: 0, width: MenuBarIndicators.groupGap, height: 22)).max == 0)
+let idle = ink(alphaMap(MenuBarIndicators.image(bars: [0, 0, 0], readout: .value("84%", charging: false))), NSRect(x: rateX, y: 0, width: 8, height: 22)).max
+let bolted = ink(alphaMap(MenuBarIndicators.image(bars: [0, 0, 0], readout: .value("84%", charging: true))), NSRect(x: rateX, y: 0, width: 8, height: 22)).max
+assert(idle == 0 && bolted > 0.5, "Charging adds a bolt left of a short value")
+let fullCharge = alphaMap(MenuBarIndicators.image(bars: [0, 0, 0], readout: .value("100%", charging: true)))
+assert(ink(fullCharge, NSRect(x: MenuBarIndicators.barsWidth, y: 0, width: 2, height: 22)).max == 0, "A wide value never pushes a bolt into the bars")
+
+// The real menu, driven the way a click drives it.
+let customizing = IslandContentView(width: IslandLayout.menuBarWidth, hasBattery: true)
+var reported: MetricLayout?
+customizing.onLayoutChange = { reported = $0 }
+customizing.update(chargingSample)
+func menuItem(_ section: String, _ name: String) -> (NSMenu, Int) {
+    let parent = customizing.customizationMenu().items.first { $0.title.hasPrefix(section) }!
+    let index = parent.submenu!.items.firstIndex { $0.title == name }!
+    return (parent.submenu!, index)
+}
+let opened = customizing.customizationMenu()
+assert(opened.items.map(\.title).prefix(3) == ["Top Left: CPU", "Top Middle: GPU", "Top Right: RAM"] && opened.items[4].title == "Menu Bar: Network")
+assert(opened.items.last?.title == "Reset to Defaults" && opened.items.last?.isEnabled == false, "Nothing to reset yet")
+assert(opened.items[0].submenu!.items.map(\.title) == ["CPU", "GPU", "RAM", "Battery", "Disk"], "Tiles offer gauges only")
+assert(opened.items[0].submenu!.items[0].state == .on && opened.items[0].submenu!.items[1].state == .off)
+let barPicker = opened.items[4].submenu!.items
+assert(barPicker.map(\.title) == ["Network", "Power", "Battery", "Power Usage", "Charging", "Storage", "Disk", "Disk Activity", "System", "CPU", "GPU", "RAM", "Swap"],
+       "The menu bar picker uses the same categories as the list")
+assert(barPicker.filter(\.isSectionHeader).map(\.title) == ["Power", "Storage", "System"] && barPicker.filter { !$0.isSectionHeader }.count == Metric.allCases.count,
+       "Headings are headings; every metric stays selectable")
+let (leftMenu, batteryIndex) = menuItem("Top Left", "Battery")
+leftMenu.performActionForItem(at: batteryIndex)
+assert(customizing.metricLayout.top[0] == .battery && reported?.top[0] == .battery)
+assert(customizing.tiles[0].metric == .battery && customizing.tiles[0].charging && customizing.tiles[0].value == 0.84, "The tile shows the last reading at once")
+assert(customizing.tiles[0].accessibilityValue() as? String == "84 %, charging")
+assert(customizing.list.metrics.contains(.cpu) && !customizing.list.metrics.contains(.battery), "The displaced gauge moves to the list")
+let (barMenu, swapIndex) = menuItem("Menu Bar", "Swap")
+barMenu.performActionForItem(at: swapIndex)
+assert(customizing.metricLayout.menuBar == .swap && reported?.menuBar == .swap)
+assert(customizing.customizationMenu().items[4].title == "Menu Bar: Swap")
+let reset = customizing.customizationMenu().items.last!
+assert(reset.isEnabled)
+_ = (reset.target as! NSObject).perform(reset.action, with: reset)
+assert(customizing.metricLayout == MetricLayout() && reported == MetricLayout())
+let desktopMenu = IslandContentView(width: IslandLayout.menuBarWidth, hasBattery: false).customizationMenu()
+assert(desktopMenu.items[0].submenu!.items.map(\.title) == ["CPU", "GPU", "RAM", "Disk"])
+assert(desktopMenu.items[4].submenu!.items.filter(\.isSectionHeader).map(\.title) == ["Storage", "System"], "No empty Power section on a desktop")
+assert(customizing.customizeButton.accessibilityRole() == .button && customizing.customizeButton.accessibilityLabel() == "Settings")
+print("PASS: battery, power, disk, swap; customization menu, swaps, persistence, every position fits")
