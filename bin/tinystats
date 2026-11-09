@@ -14,13 +14,26 @@ owned_pids() {
         esac
     done
 }
+# Ask this installation's processes to quit and wait until they have.
+stop_app() {
+    task_pids=$(owned_pids)
+    for task_pid in $task_pids; do kill -TERM "$task_pid" 2>/dev/null || true; done
+    for task_pid in $task_pids; do
+        task_tries=0
+        while kill -0 "$task_pid" 2>/dev/null; do
+            task_tries=$((task_tries + 1))
+            [ "$task_tries" -le 50 ] || { echo 'tinyStats did not quit.' >&2; exit 1; }
+            sleep 0.1
+        done
+    done
+}
 case "${1:-start}" in
     start)
         [ -d "$task_app" ] || { echo 'tinyStats is missing. Run install.sh.' >&2; exit 1; }
         if [ -z "$(owned_pids)" ]; then open "$task_app"; fi
         ;;
     stop)
-        for task_pid in $(owned_pids); do kill -TERM "$task_pid" 2>/dev/null || true; done
+        stop_app
         ;;
     status)
         task_pids=$(owned_pids)
@@ -32,17 +45,8 @@ case "${1:-start}" in
         ;;
     update)
         if [ -n "${TINYSTATS_KEGS:-}" ]; then
-            brew upgrade tinystats
-            task_pids=$(owned_pids)
-            for task_pid in $task_pids; do kill -TERM "$task_pid" 2>/dev/null || true; done
-            for task_pid in $task_pids; do
-                task_tries=0
-                while kill -0 "$task_pid" 2>/dev/null; do
-                    task_tries=$((task_tries + 1))
-                    [ "$task_tries" -le 50 ] || { echo 'App did not quit; restart it with: tinystats stop && tinystats' >&2; exit 1; }
-                    sleep 0.1
-                done
-            done
+            brew upgrade tschnorpfeil/tinystats/tinystats
+            stop_app
             exec "$(brew --prefix)/bin/tinystats" start
         fi
         [ -d "$task_data/source/.git" ] || { echo 'Managed source checkout is missing. Please reinstall.' >&2; exit 1; }

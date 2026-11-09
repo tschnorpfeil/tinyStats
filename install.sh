@@ -40,11 +40,8 @@ if [ "$task_source" != "$task_managed_source" ]; then
     fi
 fi
 task_source="$task_data/source"
-# Authenticate private-repo updates without storing tokens or changing global Git settings.
-if command -v gh >/dev/null; then
-    git -C "$task_source" config --replace-all credential.https://github.com.helper ""
-    git -C "$task_source" config --add credential.https://github.com.helper "!gh auth git-credential"
-fi
+# Earlier versions stored a gh credential helper here; the repository is public.
+git -C "$task_source" config --unset-all credential.https://github.com.helper || true
 if [ "${1:-}" = --update ]; then
     [ -z "$(git -C "$task_source" status --porcelain)" ] || { echo 'Local changes in the installation checkout; update aborted.' >&2; exit 1; }
     git -C "$task_source" fetch origin main
@@ -54,26 +51,12 @@ if [ "${1:-}" = --update ]; then
     exit $?
 fi
 # Compile before touching the installed app or its process.
-"$task_source/build.sh"
+"$task_source/build.sh" "$(git -C "$task_source" log -1 --format='tinyStats %h (%cs)')"
 task_stage=$(mktemp -d "$task_apps/.tinystats-install.XXXXXX")
 ditto "$task_source/tinyStats.app" "$task_stage/tinyStats.app"
 [ -x "$task_stage/tinyStats.app/Contents/MacOS/tinyStats" ] || { echo 'Build is incomplete.' >&2; exit 1; }
-mkdir -p "$task_stage/tinyStats.app/Contents/Resources"
-git -C "$task_source" log -1 --format='tinyStats %h (%cs)' > "$task_stage/tinyStats.app/Contents/Resources/version.txt"
-# Identify only this installation's executable, never every similarly named process.
-task_exe="$task_apps/tinyStats.app/Contents/MacOS/tinyStats"
-task_pids=$(ps -ax -o pid= -o comm= | while read -r task_pid task_comm; do
-    [ "$task_comm" != "$task_exe" ] || printf '%s\n' "$task_pid"
-done)
-for task_pid in $task_pids; do kill -TERM "$task_pid" 2>/dev/null || true; done
-for task_pid in $task_pids; do
-    task_tries=0
-    while kill -0 "$task_pid" 2>/dev/null; do
-        task_tries=$((task_tries + 1))
-        [ "$task_tries" -le 50 ] || { echo 'App did not quit; installation aborted.' >&2; exit 1; }
-        sleep 0.1
-    done
-done
+# Stop only this installation's app (the CLI knows which processes are its own).
+TINYSTATS_APP_DIR="$task_apps" "$task_source/bin/tinystats" stop
 if [ -e "$task_apps/tinyStats.app" ]; then mv "$task_apps/tinyStats.app" "$task_stage/previous.app"; fi
 if ! mv "$task_stage/tinyStats.app" "$task_apps/tinyStats.app"; then
     [ ! -d "$task_stage/previous.app" ] || mv "$task_stage/previous.app" "$task_apps/tinyStats.app"

@@ -1,3 +1,5 @@
+import AppKit
+
 // AppKit renderings with fixed sample values; no screen capture or live measurements.
 let renderApp = NSApplication.shared
 renderApp.appearance = NSAppearance(named: .darkAqua)
