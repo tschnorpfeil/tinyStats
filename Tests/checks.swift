@@ -244,6 +244,21 @@ for candidate in [wing, publicWing, tallWing, shiftedWing] {
 }
 assert(NotchWing.make(screenFrame: shiftedScreen, leftArea: scoutLeft,
                       rightArea: scoutRight, topInset: 32) == nil, "Areas outside the given screen must not be used")
+// A built-in display below an external primary sits at a negative origin.
+let builtInScreen = NSRect(x: 234, y: -982, width: 1512, height: 982)
+let builtInWing = NotchWing.make(screenFrame: builtInScreen, leftArea: NSRect(x: 234, y: -32, width: 663.5, height: 32),
+                                 rightArea: NSRect(x: 1082.5, y: -32, width: 663.5, height: 32), topInset: 32)!
+assert(builtInWing.notch == NSRect(x: 897.5, y: -32, width: 185, height: 32) && builtInWing.frame.maxY == 0,
+       "A notch on a secondary display keeps its wing at that display's top edge")
+assert(builtInScreen.contains(IslandLayout.notch(builtInWing, height: IslandContentView.height).frame),
+       "The attached details stay on the notched secondary display")
+let notchedScreens = NSScreen.screens.filter { $0.auxiliaryTopLeftArea != nil && $0.auxiliaryTopRightArea != nil }
+if notchedScreens.isEmpty {
+    assert(NotchWing.firstAvailable(on: NSScreen.screens) == nil, "No notch, no wing")
+} else if let liveWing = NotchWing.firstAvailable(on: NSScreen.screens) {
+    assert(notchedScreens.contains { $0.frame.contains(liveWing.frame) }, "The wing belongs to a display with a notch")
+    print("INFO: wing on a notched display (\(NSScreen.screens.count) connected), frame \(liveWing.frame)")
+}
 print("PASS: housing lower edge from the outline (vertices, local/global, rejects), wing frames, indicator fixed, fallbacks")
 
 // MARK: User acceptance: concave upper-right attachment, seamless lower-left into the housing, flush lower edge

@@ -402,6 +402,16 @@ struct NotchWing: Equatable {
             wing.notch.width + Self.wingWidth >= IslandLayout.minimumWidth ? wing : nil
     }
 
+    /// The wing for the first display with a usable housing. That display need
+    /// not be the primary one: a built-in screen beside an external primary
+    /// still has its notch.
+    static func firstAvailable(on screens: [NSScreen]) -> NotchWing? {
+        screens.lazy.compactMap {
+            make(screenFrame: $0.frame, leftArea: $0.auxiliaryTopLeftArea, rightArea: $0.auxiliaryTopRightArea,
+                 topInset: $0.safeAreaInsets.top, outline: HousingOutline.outline(of: $0))
+        }.first
+    }
+
     /// Window coordinates. Concave flare where the right edge meets the top of
     /// the display, straight lower edge on the housing's lower edge, convex free
     /// lower-right corner that squares off (`attach` → 1) while details hang
@@ -900,7 +910,7 @@ final class IslandContentView: NSView {
         network.rates = net
     }
 
-    /// The switch exists only while the primary display has a usable housing.
+    /// The switch exists only while a connected display has a usable housing.
     func setNotchOption(available: Bool, enabled: Bool) {
         notchSwitch.state = enabled ? .on : .off
         notchSwitch.isEnabled = available
@@ -1334,13 +1344,9 @@ final class App: NSObject, NSApplicationDelegate {
 
     @objc private func screensChanged(_ notification: Notification) { updatePlacement() }
 
-    /// Re-evaluates the primary display (first screen, carrying the menu bar).
+    /// Re-evaluates the connected displays; the status item returns when no notch is left.
     private func updatePlacement() {
-        let available = NSScreen.screens.first.flatMap {
-            NotchWing.make(screenFrame: $0.frame, leftArea: $0.auxiliaryTopLeftArea,
-                           rightArea: $0.auxiliaryTopRightArea, topInset: $0.safeAreaInsets.top,
-                           outline: HousingOutline.outline(of: $0))
-        }
+        let available = NotchWing.firstAvailable(on: NSScreen.screens)
         let enabled = UserDefaults.standard.bool(forKey: Self.notchDefaultsKey)
         content.setNotchOption(available: available != nil, enabled: enabled)
         presenter.close(animated: false)
