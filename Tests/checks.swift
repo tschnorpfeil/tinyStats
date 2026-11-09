@@ -1,15 +1,10 @@
 import AppKit
 
-extension Metrics {
-    var networkBaselineTimeForCheck: TimeInterval? { prevNetTime }
-}
-
 // MARK: Live samples (measurement semantics unchanged)
 
 let metrics = Metrics()
 assert(metrics.cpu() == nil, "CPU first sample must be unavailable")
 assert(metrics.network() == nil, "Network first sample must establish baseline")
-let firstBaseline = metrics.networkBaselineTimeForCheck
 // CPU stays nil until the kernel has counted at least one tick; wait for it
 // instead of assuming one within 50 ms. The value itself is still checked.
 var cpuSample: Double?
@@ -20,9 +15,34 @@ for _ in 0..<40 where cpuSample == nil {
 assert(cpuSample.map { (0...1).contains($0) } == true, "CPU sample must arrive and stay within 0...1")
 let network = metrics.network()
 assert(network != nil, "This Mac must expose en interfaces")
-assert(metrics.networkBaselineTimeForCheck! > firstBaseline!, "Successful network sample must advance baseline")
 assert(network!.downloadBytesPerSecond >= 0 && network!.uploadBytesPerSecond >= 0)
 assert(metrics.ram().map { (0...1).contains($0) } == true)
+metrics.restartBaselines()
+assert(metrics.cpu() == nil && metrics.network() == nil, "After a pause in sampling every rate starts a new baseline")
+
+// MARK: Counters, GPU and memory as pure functions
+
+var counted = CounterRates<String>()
+assert(counted.update(["en0": (100, 10)], at: 1) == nil, "First reading is a baseline")
+assert(counted.update(["en0": (300, 70)], at: 3)! == (100, 30), "Rate is the delta over the elapsed time")
+assert(counted.update(["en0": (400, 80), "en1": (5, 5)], at: 4) == nil, "A new interface starts a new baseline")
+assert(counted.update(["en0": (500, 90), "en1": (6, 6)], at: 5)! == (101, 11), "Rates sum over all keys")
+assert(counted.update(["en0": (10, 95), "en1": (7, 7)], at: 6) == nil, "A falling counter is a reset, never a spike")
+assert(counted.update(["en0": (20, 96), "en2": (7, 7)], at: 7) == nil, "Same count but other keys: new baseline")
+assert(counted.update(["en0": (30, 97), "en2": (8, 8)], at: 7) == nil, "No time passed: no rate")
+assert(counted.update([:], at: 8) == nil && counted.update(["en0": (40, 98), "en2": (9, 9)], at: 9) == nil,
+       "Nothing counted drops the baseline")
+assert(counted.update(["en0": (UInt64(1) << 40, 98), "en2": (9, 9)], at: 10)! == (Double((UInt64(1) << 40) - 40), 0),
+       "Counters are 64-bit: beyond 4 GiB nothing wraps")
+assert(Metrics.busiest([12, 80, 30]) == 0.8, "Several GPUs read as the busiest one, not their sum")
+assert(Metrics.busiest([]) == nil && Metrics.busiest([.nan, 150, -1]) == nil && Metrics.busiest([.nan, 40]) == 0.4)
+var vm = vm_statistics64()
+vm.internal_page_count = 600; vm.purgeable_count = 100; vm.wire_count = 200; vm.compressor_page_count = 100
+vm.active_count = 900; vm.external_page_count = 300
+assert(Metrics.memoryUsed(vm, pageSize: 4096, total: 1000 * 4096) == 0.8,
+       "Memory Used: app (internal minus purgeable) + wired + compressed; file cache does not count")
+vm.purgeable_count = 700
+assert(Metrics.memoryUsed(vm, pageSize: 4096, total: 1000 * 4096) == 0.3 && Metrics.memoryUsed(vm, pageSize: 4096, total: 0) == nil)
 
 // MARK: Formatting
 

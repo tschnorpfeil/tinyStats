@@ -76,7 +76,7 @@ final class MetricView: NSView {
     private func describeMetric() {
         setAccessibilityLabel(metric == .ram ? "RAM estimated" : metric.name)
         switch metric {
-        case .ram: toolTip = "Estimated usage: active, wired and compressed memory pages. Not memory pressure."
+        case .ram: toolTip = "Estimated usage: app, wired and compressed memory, like Memory Used in Activity Monitor. Not memory pressure."
         case .disk: toolTip = "Used space on the startup disk."
         default: toolTip = nil
         }

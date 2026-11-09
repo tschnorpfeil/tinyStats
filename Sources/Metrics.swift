@@ -58,183 +58,101 @@ struct Sample: Equatable {
     var swapUsedBytes: Double? = nil
 }
 
+/// Per-second rates from pairs of cumulative counters, one pair per key. A key
+/// appearing or disappearing, or a counter that fell (reset), starts a new
+/// baseline, so none of them ever reads as a spike.
+struct CounterRates<Key: Hashable> {
+    typealias Counters = [Key: (UInt64, UInt64)]
+    private var baseline: (counters: Counters, time: TimeInterval)?
+
+    /// Nil for the first reading of a baseline and when nothing is counted.
+    mutating func update(_ counters: Counters, at time: TimeInterval) -> (Double, Double)? {
+        defer { self.baseline = counters.isEmpty ? nil : (counters, time) }
+        guard let previous = baseline, time > previous.time, counters.count == previous.counters.count else { return nil }
+        var sum = (0.0, 0.0)
+        for (key, now) in counters {
+            guard let then = previous.counters[key], now.0 >= then.0, now.1 >= then.1 else { return nil }
+            sum.0 += Double(now.0 - then.0)
+            sum.1 += Double(now.1 - then.1)
+        }
+        let interval = time - previous.time
+        return (sum.0 / interval, sum.1 / interval)
+    }
+}
+
 final class Metrics {
     static let hasBattery = readBattery() != nil
     private static let diskSpaceInterval: TimeInterval = 30
+    /// Taken once: every `mach_host_self()` adds a send right that is never given back.
+    private static let host = mach_host_self()
 
-    private var prevDisks: [UInt64: (read: UInt64, write: UInt64)]?
-    private var prevDiskTime: TimeInterval?
+    private var cpuTicks: [UInt32]?
+    private var networkRates = CounterRates<String>()
+    private var diskRates = CounterRates<UInt64>()
     private var diskSpaceCache: (time: TimeInterval, value: DiskSpace?)?
-    private var prevCPU: (user: UInt32, sys: UInt32, idle: UInt32, nice: UInt32)?
-    private var prevNets: [String: (in: UInt64, out: UInt64)]?
-    private(set) var prevNetTime: TimeInterval?
+
+    /// Rates and CPU load over a pause in sampling would average the whole gap.
+    func restartBaselines() {
+        cpuTicks = nil
+        networkRates = CounterRates()
+        diskRates = CounterRates()
+    }
 
     func cpu() -> Double? {
-        var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
-        var info = host_cpu_load_info_data_t()
-        let kr = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &count)
-            }
-        }
-        guard kr == KERN_SUCCESS else { return nil }
-        defer {
-            let u = info.cpu_ticks.0, s = info.cpu_ticks.1, i = info.cpu_ticks.2, n = info.cpu_ticks.3
-            prevCPU = (u, s, i, n)
-        }
-        guard let p = prevCPU else { return nil }
-        let du = Double(info.cpu_ticks.0 &- p.user)
-        let ds = Double(info.cpu_ticks.1 &- p.sys)
-        let di = Double(info.cpu_ticks.2 &- p.idle)
-        let dn = Double(info.cpu_ticks.3 &- p.nice)
-        let total = du + ds + di + dn
-        return total > 0 ? (du + ds + dn) / total : nil
+        guard let info = Self.hostStatistics(host_cpu_load_info(), { host_statistics($0, HOST_CPU_LOAD_INFO, $1, &$2) })
+        else { return nil }
+        let ticks = [info.cpu_ticks.0, info.cpu_ticks.1, info.cpu_ticks.2, info.cpu_ticks.3]
+        defer { cpuTicks = ticks }
+        guard let previous = cpuTicks else { return nil }
+        let delta = zip(ticks, previous).map { Double($0 &- $1) }
+        let total = delta.reduce(0, +)
+        return total > 0 ? (total - delta[Int(CPU_STATE_IDLE)]) / total : nil
     }
 
     func gpu() -> Double? {
-        var iterator: io_iterator_t = 0
-        guard IOServiceGetMatchingServices(kIOMainPortDefault,
-                                           IOServiceMatching("IOAccelerator"),
-                                           &iterator) == KERN_SUCCESS else { return nil }
-        defer { IOObjectRelease(iterator) }
-        var busy = 0.0
-        var found = false
-        while true {
-            let service = IOIteratorNext(iterator)
-            guard service != 0 else { break }
-            defer { IOObjectRelease(service) }
-            var propsRef: Unmanaged<CFMutableDictionary>?
-            guard IORegistryEntryCreateCFProperties(service, &propsRef, kCFAllocatorDefault, 0) == KERN_SUCCESS,
-                  let props = propsRef?.takeRetainedValue() as? [String: Any],
-                  let stats = props["PerformanceStatistics"] as? [String: Any],
-                  let n = stats["Device Utilization %"] as? NSNumber else { continue }
-            let raw = n.doubleValue
-            guard raw.isFinite, raw >= 0, raw <= 100 else { continue }
-            busy += raw / 100.0
-            found = true
-        }
-        return found ? min(1.0, busy) : nil
+        Self.busiest(Self.services("IOAccelerator") {
+            ((Self.property($0, "PerformanceStatistics") as? [String: Any])?["Device Utilization %"] as? NSNumber)?.doubleValue
+        })
+    }
+
+    /// The busiest GPU, as a fraction: summed over several GPUs the figure
+    /// would mean nothing. Readings outside 0...100 % are dropped.
+    static func busiest(_ percents: [Double]) -> Double? {
+        percents.filter { (0...100).contains($0) }.max().map { $0 / 100 }
     }
 
     func ram() -> Double? {
-        var stats = vm_statistics64_data_t()
-        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
-        let kr = withUnsafeMutablePointer(to: &stats) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
-            }
+        Self.hostStatistics(vm_statistics64(), { host_statistics64($0, HOST_VM_INFO64, $1, &$2) }).flatMap {
+            Self.memoryUsed($0, pageSize: UInt64(vm_kernel_page_size), total: ProcessInfo.processInfo.physicalMemory)
         }
-        guard kr == KERN_SUCCESS else { return nil }
-        let pageSize = UInt64(vm_kernel_page_size)
-        let active = UInt64(stats.active_count) * pageSize
-        let wired = UInt64(stats.wire_count) * pageSize
-        let compressed = UInt64(stats.compressor_page_count) * pageSize
-        let used = active + wired + compressed
-        let total = ProcessInfo.processInfo.physicalMemory
-        return total > 0 ? min(1.0, Double(used) / Double(total)) : nil
+    }
+
+    /// Activity Monitor's "Memory Used": app memory (anonymous pages that are
+    /// not purgeable), wired and compressed. File-backed cache does not count.
+    static func memoryUsed(_ vm: vm_statistics64, pageSize: UInt64, total: UInt64) -> Double? {
+        let app = UInt64(vm.internal_page_count) - min(UInt64(vm.purgeable_count), UInt64(vm.internal_page_count))
+        let pages = app + UInt64(vm.wire_count) + UInt64(vm.compressor_page_count)
+        return total > 0 ? min(1, Double(pages * pageSize) / Double(total)) : nil
     }
 
     func network() -> NetworkRates? {
-        var ifaddr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddr) == 0 else {
-            prevNets = nil
-            prevNetTime = nil
-            return nil
+        networkRates.update(Self.interfaceCounters(), at: ProcessInfo.processInfo.systemUptime).map {
+            NetworkRates(downloadBytesPerSecond: $0.0, uploadBytesPerSecond: $0.1)
         }
-        defer { freeifaddrs(ifaddr) }
-        var current: [String: (in: UInt64, out: UInt64)] = [:]
-        var ptr = ifaddr
-        while let cur = ptr {
-            defer { ptr = cur.pointee.ifa_next }
-            let ifa = cur.pointee
-            guard let namePtr = ifa.ifa_name,
-                  let addr = ifa.ifa_addr, addr.pointee.sa_family == UInt8(AF_LINK),
-                  let name = String(validatingUTF8: namePtr), name.hasPrefix("en") else { continue }
-            if let data = ifa.ifa_data?.assumingMemoryBound(to: if_data.self) {
-                current[name] = (UInt64(data.pointee.ifi_ibytes), UInt64(data.pointee.ifi_obytes))
-            }
-        }
-        let now = ProcessInfo.processInfo.systemUptime
-        guard !current.isEmpty else {
-            prevNets = nil
-            prevNetTime = nil
-            return nil
-        }
-        guard let prev = prevNets, let prevTime = prevNetTime, now > prevTime else {
-            prevNets = current
-            prevNetTime = now
-            return nil
-        }
-        if Set(prev.keys) != Set(current.keys) {
-            prevNets = current
-            prevNetTime = now
-            return nil
-        }
-        var counterDropped = false
-        for name in current.keys {
-            guard let p = prev[name], let c = current[name] else { continue }
-            if c.in < p.in || c.out < p.out { counterDropped = true; break }
-        }
-        if counterDropped {
-            prevNets = current
-            prevNetTime = now
-            return nil
-        }
-        let dt = now - prevTime
-        guard dt > 0 else {
-            prevNets = current
-            prevNetTime = now
-            return nil
-        }
-        var dIn = 0.0
-        var dOut = 0.0
-        for (name, c) in current {
-            let p = prev[name]!
-            dIn += Double(c.in - p.in)
-            dOut += Double(c.out - p.out)
-        }
-        prevNets = current
-        prevNetTime = now
-        return NetworkRates(downloadBytesPerSecond: dIn / dt, uploadBytesPerSecond: dOut / dt)
     }
 
-    /// Reads the internal battery; nil on Macs without one.
-    private static func readBattery() -> BatteryStatus? {
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
-        for source in sources {
-            guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
-                  description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType else { continue }
-            let current = (description[kIOPSCurrentCapacityKey] as? NSNumber)?.doubleValue
-            let maximum = (description[kIOPSMaxCapacityKey] as? NSNumber)?.doubleValue
-            let onAC = description[kIOPSPowerSourceStateKey] as? String == kIOPSACPowerValue
-            let charging = (description[kIOPSIsChargingKey] as? NSNumber)?.boolValue == true
-            let state: BatteryStatus.State = charging ? .charging : onAC ? .onAC : .discharging
-            let minutesKey = charging ? kIOPSTimeToFullChargeKey : kIOPSTimeToEmptyKey
-            let minutes = (description[minutesKey] as? NSNumber)?.intValue
-            var fraction: Double?
-            if let current, let maximum, maximum > 0 { fraction = min(1, max(0, current / maximum)) }
-            let power = readPower(state: state)
-            return BatteryStatus(fraction: fraction, state: state,
-                                 minutesRemaining: state != .onAC ? minutes.flatMap { $0 >= 0 ? $0 : nil } : nil,
-                                 usageWatts: power.usage, chargeWatts: power.charge)
+    /// Bytes per second across all block devices.
+    func diskActivity() -> DiskRates? {
+        let counters = Self.services("IOBlockStorageDriver") { service -> (UInt64, (UInt64, UInt64))? in
+            var id: UInt64 = 0
+            guard IORegistryEntryGetRegistryEntryID(service, &id) == KERN_SUCCESS,
+                  let stats = Self.property(service, "Statistics") as? [String: Any],
+                  let read = stats["Bytes (Read)"] as? NSNumber, let write = stats["Bytes (Write)"] as? NSNumber else { return nil }
+            return (id, (read.uint64Value, write.uint64Value))
         }
-        return nil
-    }
-
-    private static func readPower(state: BatteryStatus.State) -> (usage: Double?, charge: Double?) {
-        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
-        guard service != 0 else { return (nil, nil) }
-        defer { IOObjectRelease(service) }
-        func property(_ key: String) -> Any? {
-            IORegistryEntryCreateCFProperty(service, key as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue()
+        return diskRates.update(Dictionary(counters) { first, _ in first }, at: ProcessInfo.processInfo.systemUptime).map {
+            DiskRates(readBytesPerSecond: $0.0, writeBytesPerSecond: $0.1)
         }
-        let telemetry = property("PowerTelemetryData") as? [String: Any]
-        return BatteryStatus.power(state: state,
-                                   systemLoadMilliwatts: (telemetry?["SystemLoad"] as? NSNumber)?.int64Value,
-                                   batteryMilliwatts: (telemetry?["BatteryPower"] as? NSNumber)?.int64Value,
-                                   millivolts: (property("Voltage") as? NSNumber)?.int64Value,
-                                   milliamps: (property("Amperage") as? NSNumber)?.int64Value)
     }
 
     /// Free space counts purgeable data, like Finder. Refreshed rarely: the
@@ -255,41 +173,6 @@ final class Metrics {
         return value
     }
 
-    /// Bytes per second across all block devices. A device appearing or
-    /// disappearing starts a new baseline, so it never reads as a spike.
-    func diskActivity() -> DiskRates? {
-        var iterator: io_iterator_t = 0
-        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOBlockStorageDriver"),
-                                           &iterator) == KERN_SUCCESS else { return nil }
-        defer { IOObjectRelease(iterator) }
-        var current: [UInt64: (read: UInt64, write: UInt64)] = [:]
-        while true {
-            let service = IOIteratorNext(iterator)
-            guard service != 0 else { break }
-            defer { IOObjectRelease(service) }
-            var id: UInt64 = 0
-            guard IORegistryEntryGetRegistryEntryID(service, &id) == KERN_SUCCESS,
-                  let stats = IORegistryEntryCreateCFProperty(service, "Statistics" as CFString, kCFAllocatorDefault, 0)?
-                      .takeRetainedValue() as? [String: Any],
-                  let read = stats["Bytes (Read)"] as? NSNumber, let write = stats["Bytes (Write)"] as? NSNumber else { continue }
-            current[id] = (read.uint64Value, write.uint64Value)
-        }
-        let now = ProcessInfo.processInfo.systemUptime
-        defer {
-            prevDisks = current.isEmpty ? nil : current
-            prevDiskTime = current.isEmpty ? nil : now
-        }
-        guard !current.isEmpty, let prev = prevDisks, let prevTime = prevDiskTime, now > prevTime,
-              Set(prev.keys) == Set(current.keys) else { return nil }
-        var read = 0.0, write = 0.0
-        for (id, c) in current {
-            guard let p = prev[id], c.read >= p.read, c.write >= p.write else { return nil }
-            read += Double(c.read - p.read)
-            write += Double(c.write - p.write)
-        }
-        return DiskRates(readBytesPerSecond: read / (now - prevTime), writeBytesPerSecond: write / (now - prevTime))
-    }
-
     func swapUsed() -> Double? {
         var usage = xsw_usage()
         var size = MemoryLayout<xsw_usage>.size
@@ -299,5 +182,99 @@ final class Metrics {
     func sample() -> Sample {
         Sample(cpu: cpu(), gpu: gpu(), ram: ram(), net: network(), battery: Self.readBattery(), disk: diskSpace(),
                diskIO: diskActivity(), swapUsedBytes: swapUsed())
+    }
+
+    // MARK: Sources
+
+    private static func hostStatistics<Info>(_ empty: Info,
+                                             _ read: (host_t, UnsafeMutablePointer<integer_t>, inout mach_msg_type_number_t) -> kern_return_t) -> Info? {
+        var info = empty
+        var count = mach_msg_type_number_t(MemoryLayout<Info>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { read(host, $0, &count) }
+        }
+        return result == KERN_SUCCESS ? info : nil
+    }
+
+    /// What `read` finds in each registered instance of an IOKit class.
+    private static func services<Value>(_ name: String, _ read: (io_object_t) -> Value?) -> [Value] {
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching(name), &iterator) == KERN_SUCCESS else { return [] }
+        defer { IOObjectRelease(iterator) }
+        var values: [Value] = []
+        var service = IOIteratorNext(iterator)
+        while service != 0 {
+            if let value = read(service) { values.append(value) }
+            IOObjectRelease(service)
+            service = IOIteratorNext(iterator)
+        }
+        return values
+    }
+
+    private static func property(_ entry: io_registry_entry_t, _ key: String) -> Any? {
+        IORegistryEntryCreateCFProperty(entry, key as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue()
+    }
+
+    /// 64-bit byte counters of the Ethernet and Wi-Fi interfaces (`en*`), keyed
+    /// by name. `getifaddrs` offers only 32-bit ones, which wrap every 4 GiB.
+    private static func interfaceCounters() -> [String: (UInt64, UInt64)] {
+        var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0]
+        var length = 0
+        guard sysctl(&mib, u_int(mib.count), nil, &length, nil, 0) == 0 else { return [:] }
+        var buffer = [UInt8](repeating: 0, count: length)
+        guard sysctl(&mib, u_int(mib.count), &buffer, &length, nil, 0) == 0 else { return [:] }
+        var counters: [String: (UInt64, UInt64)] = [:]
+        var name = [CChar](repeating: 0, count: Int(IF_NAMESIZE))
+        buffer.withUnsafeBytes { raw in
+            var offset = 0
+            while offset + MemoryLayout<if_msghdr>.size <= length {
+                let header = raw.loadUnaligned(fromByteOffset: offset, as: if_msghdr.self)
+                guard header.ifm_msglen > 0 else { break }
+                if Int32(header.ifm_type) == RTM_IFINFO2, offset + MemoryLayout<if_msghdr2>.size <= length,
+                   let interface = name.withUnsafeMutableBufferPointer({
+                       if_indextoname(UInt32(header.ifm_index), $0.baseAddress).map { String(cString: $0) }
+                   }), interface.hasPrefix("en") {
+                    let data = raw.loadUnaligned(fromByteOffset: offset, as: if_msghdr2.self).ifm_data
+                    counters[interface] = (data.ifi_ibytes, data.ifi_obytes)
+                }
+                offset += Int(header.ifm_msglen)
+            }
+        }
+        return counters
+    }
+
+    /// Reads the internal battery; nil on Macs without one.
+    private static func readBattery() -> BatteryStatus? {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
+        for source in sources {
+            guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
+                  description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType else { continue }
+            let current = (description[kIOPSCurrentCapacityKey] as? NSNumber)?.doubleValue
+            let maximum = (description[kIOPSMaxCapacityKey] as? NSNumber)?.doubleValue
+            let onAC = description[kIOPSPowerSourceStateKey] as? String == kIOPSACPowerValue
+            let charging = (description[kIOPSIsChargingKey] as? NSNumber)?.boolValue == true
+            let state: BatteryStatus.State = charging ? .charging : onAC ? .onAC : .discharging
+            let minutes = (description[charging ? kIOPSTimeToFullChargeKey : kIOPSTimeToEmptyKey] as? NSNumber)?.intValue
+            var fraction: Double?
+            if let current, let maximum, maximum > 0 { fraction = min(1, max(0, current / maximum)) }
+            let power = readPower(state: state)
+            return BatteryStatus(fraction: fraction, state: state,
+                                 minutesRemaining: state != .onAC ? minutes.flatMap { $0 >= 0 ? $0 : nil } : nil,
+                                 usageWatts: power.usage, chargeWatts: power.charge)
+        }
+        return nil
+    }
+
+    private static func readPower(state: BatteryStatus.State) -> (usage: Double?, charge: Double?) {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
+        guard service != 0 else { return (nil, nil) }
+        defer { IOObjectRelease(service) }
+        func number(_ key: String) -> Int64? { (property(service, key) as? NSNumber)?.int64Value }
+        let telemetry = property(service, "PowerTelemetryData") as? [String: Any]
+        return BatteryStatus.power(state: state,
+                                   systemLoadMilliwatts: (telemetry?["SystemLoad"] as? NSNumber)?.int64Value,
+                                   batteryMilliwatts: (telemetry?["BatteryPower"] as? NSNumber)?.int64Value,
+                                   millivolts: number("Voltage"), milliamps: number("Amperage"))
     }
 }

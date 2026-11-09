@@ -71,14 +71,35 @@ final class App: NSObject, NSApplicationDelegate {
         }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        let workspace = NSWorkspace.shared.notificationCenter
+        workspace.addObserver(self, selector: #selector(screensSlept), name: NSWorkspace.screensDidSleepNotification, object: nil)
+        workspace.addObserver(self, selector: #selector(screensWoke), name: NSWorkspace.screensDidWakeNotification, object: nil)
         updatePlacement()
-        sample()
-        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.sample() }
-        self.timer = timer
-        RunLoop.main.add(timer, forMode: .common)
+        startSampling()
     }
 
     @objc private func screensChanged(_ notification: Notification) { updatePlacement() }
+
+    /// Nobody can read a dark display; sampling resumes when it wakes.
+    @objc private func screensSlept(_ notification: Notification) {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    @objc private func screensWoke(_ notification: Notification) {
+        metrics.restartBaselines()
+        startSampling()
+    }
+
+    private func startSampling() {
+        guard timer == nil else { return }
+        sample()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.sample() }
+        // Lets macOS coalesce wake-ups; a reading a tenth of a second late looks the same.
+        timer.tolerance = 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
 
     /// Re-evaluates the connected displays; the status item returns when no notch is left.
     private func updatePlacement() {
@@ -140,6 +161,4 @@ final class App: NSObject, NSApplicationDelegate {
             presenter.open(layout: layout, source: source)
         }
     }
-
-    func applicationWillTerminate(_ notification: Notification) { timer?.invalidate() }
 }
