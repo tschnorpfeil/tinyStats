@@ -57,6 +57,17 @@ assert(Format.rate(0) == "0 B/s")
 assert(Format.rate(1500).hasSuffix(" KB/s"))
 assert(Format.rate(1_500_000).hasSuffix(" MB/s"))
 assert(Format.rate(1_500_000_000).hasSuffix(" GB/s"))
+// Unit and precision follow the rounded value, so no boundary reads "1.000,0 KB/s" or "100,0 W".
+assert(Format.rate(999.6).hasSuffix(" KB/s") && Format.rate(999_950).hasSuffix(" MB/s") && Format.rate(999_949).hasSuffix(" KB/s"))
+assert(Format.watts(99.96) == "100 W" && Format.watts(100) == "100 W" && Format.bytes(99_960_000_000) == "100 GB")
+let de = Locale(identifier: "de_DE"), us = Locale(identifier: "en_US")
+assert(Format.scaled(999_950, units: ["B/s", "KB/s", "MB/s"], wholeBase: true, locale: de) == "1,0 MB/s")
+assert(Format.scaled(99.94, units: ["W"], wholeFrom: 100, locale: us) == "99.9 W")
+assert(Format.scaled(1234, units: ["W"], wholeFrom: 100, locale: de) == "1.234 W", "Large values keep grouping")
+assert(MenuBarIndicators.compactNumber(9.96, locale: de) == "10" && MenuBarIndicators.compactNumber(9.94, locale: de) == "9,9" &&
+       MenuBarIndicators.compactNumber(2, locale: de) == "2" && MenuBarIndicators.compactNumber(1500, locale: de) == "1500")
+assert(MenuBarIndicators.compactRate(999_950, locale: de) == "1M" && MenuBarIndicators.compactRate(9_960, locale: us) == "10K" &&
+       MenuBarIndicators.compactRate(9_940, locale: de) == "9,9K" && MenuBarIndicators.compactRate(999.6, locale: us) == "1K")
 assert(Format.split("23 %") == ("23", "%") && Format.split("8,2 KB/s") == ("8,2", "KB/s") && Format.split("—") == ("—", ""))
 let summary = Format.summary(Sample(cpu: nil, gpu: 0, ram: 1, net: nil), hasBattery: true)
 assert(summary.contains("CPU Not available") && summary.contains("GPU 0 %") && summary.contains("Download Not available"))

@@ -183,29 +183,42 @@ enum Format {
         return "\(Int((min(1, max(0, fraction)) * 100).rounded())) %"
     }
 
-    static func rate(_ bps: Double?) -> String { scaled(bps, units: ["B/s", "KB/s", "MB/s", "GB/s"]) }
+    static func rate(_ bps: Double?) -> String {
+        scaled(bps, units: ["B/s", "KB/s", "MB/s", "GB/s"], wholeBase: true) ?? "—"
+    }
     /// Three-digit sizes drop the decimal; it says nothing at that scale.
-    static func bytes(_ count: Double?) -> String { scaled(count, units: ["B", "KB", "MB", "GB", "TB"], wholeFrom: 100) }
-    static func watts(_ value: Double?) -> String { fixed(value, digits: (value ?? 0) >= 100 ? 0 : 1).map { "\($0) W" } ?? "—" }
+    static func bytes(_ count: Double?) -> String {
+        scaled(count, units: ["B", "KB", "MB", "GB", "TB"], wholeFrom: 100, wholeBase: true) ?? "—"
+    }
+    static func watts(_ value: Double?) -> String { scaled(value, units: ["W"], wholeFrom: 100) ?? "—" }
 
-    private static func scaled(_ raw: Double?, units: [String], wholeFrom: Double = .infinity) -> String {
-        guard let raw, raw.isFinite, raw >= 0 else { return "—" }
-        var value = raw
-        var unit = 0
-        while value >= 1000, unit < units.count - 1 {
+    /// Number and unit for a reading, nil when it is missing or negative. The
+    /// unit steps by 1000; unit and precision are chosen after rounding, so
+    /// 999 950 B/s reads "1,0 MB/s" and 99,96 W "100 W", never "1.000,0 KB/s"
+    /// or "100,0 W". One decimal below `wholeFrom`, none from there on or in
+    /// the first unit when `wholeBase`. `compact` drops a trailing zero
+    /// decimal, grouping and the space before the unit.
+    static func scaled(_ raw: Double?, units: [String], wholeFrom: Double = 1000, wholeBase: Bool = false,
+                       compact: Bool = false, locale: Locale = .current) -> String? {
+        guard let raw, raw.isFinite, raw >= 0 else { return nil }
+        var value = raw, unit = 0
+        func rounded(_ digits: Int) -> Double {
+            let scale = digits == 0 ? 1 : 10.0
+            return (value * scale).rounded() / scale
+        }
+        while true {
+            let digits = (wholeBase && unit == 0) || rounded(1) >= wholeFrom ? 0 : 1
+            let shown = rounded(digits)
+            if shown < 1000 || unit == units.count - 1 {
+                // FormatStyle keeps its formatters cached; samples arrive every second.
+                let style = FloatingPointFormatStyle<Double>.number.locale(locale)
+                let number = compact ? shown.formatted(style.precision(.fractionLength(0...digits)).grouping(.never))
+                                     : shown.formatted(style.precision(.fractionLength(digits)))
+                return number + (compact ? "" : " ") + units[unit]
+            }
             value /= 1000
             unit += 1
         }
-        return "\(fixed(value, digits: unit == 0 || value >= wholeFrom ? 0 : 1) ?? "—") \(units[unit])"
-    }
-
-    private static func fixed(_ value: Double?, digits: Int) -> String? {
-        guard let value, value.isFinite, value >= 0 else { return nil }
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = digits
-        formatter.maximumFractionDigits = digits
-        return formatter.string(from: NSNumber(value: value))
     }
 
     /// Splits "8,2 KB/s" or "23 %" into number and unit.

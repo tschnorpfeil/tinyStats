@@ -33,35 +33,14 @@ enum MenuBarIndicators {
     }
 
     static func compactRate(_ bytes: Double?, locale: Locale = .current) -> String {
-        guard let bytes, bytes.isFinite, bytes >= 0 else { return "—" }
-        guard bytes < 1_000_000_000_000 else { return "≥1T" }
-        let units = ["B", "K", "M", "G", "T"]
-        var value = bytes
-        var index = 0
-        // Promote values that would otherwise round to 1000 of the lower unit.
-        while value >= 999.5, index < units.count - 1 {
-            value /= 1000
-            index += 1
-        }
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.locale = locale
-        formatter.usesGroupingSeparator = false
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = index > 0 && value < 10 ? 1 : 0
-        return (formatter.string(from: NSNumber(value: value)) ?? "—") + units[index]
+        if let bytes, bytes >= 1_000_000_000_000, bytes.isFinite { return "≥1T" }
+        return Format.scaled(bytes, units: ["B", "K", "M", "G", "T"], wholeFrom: 10, wholeBase: true,
+                             compact: true, locale: locale) ?? "—"
     }
 
     /// Whole numbers from 10 up, one decimal below; nil when missing.
     static func compactNumber(_ value: Double?, locale: Locale = .current) -> String? {
-        guard let value, value.isFinite, value >= 0 else { return nil }
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.locale = locale
-        formatter.usesGroupingSeparator = false
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = value < 10 ? 1 : 0
-        return formatter.string(from: NSNumber(value: value))
+        Format.scaled(value, units: [""], wholeFrom: 10, compact: true, locale: locale)
     }
 
     /// Upload on top, download below; each row keeps its own measured rate.
