@@ -47,6 +47,7 @@ task_cli="$HOME/.local/bin/tinystats"
 task_exe="$HOME/Applications/tinyStats.app/Contents/MacOS/tinyStats"
 [ -x "$task_exe" ] && [ -x "$task_cli" ]
 [ "$(wc -l < "$HOME/open-calls" | tr -d ' ')" = 1 ]
+task_initial_version=$("$task_cli" --version)
 "$task_cli" --version | grep 'tinyStats '
 # A running owned process must not cause a second launch.
 printf '123 %s\n' "$task_exe" > "$HOME/processes"
@@ -65,7 +66,18 @@ git -C "$task_source" remote set-url origin "$task_tmp/repository"
 printf 'update fixture\n' > "$task_tmp/repository/revision"
 git -C "$task_tmp/repository" add revision
 git -C "$task_tmp/repository" -c user.name=Test -c user.email=test@example.invalid commit -qm update
+# Failed update advances source but must keep reporting the installed revision.
+touch "$task_source/fail-build"
+if "$task_cli" update; then echo 'Expected update build failure' >&2; exit 1; fi
+[ "$("$task_cli" --version)" = "$task_initial_version" ]
+grep -q 'installed sentinel' "$task_exe"
+rm "$task_source/fail-build"
+# Lock must reject even the fetch phase of another update.
+mkdir "$HOME/.local/share/tinystats/install.lock"
+if "$task_cli" update; then echo 'Expected concurrent update rejection' >&2; exit 1; fi
+rmdir "$HOME/.local/share/tinystats/install.lock"
 "$task_cli" update
+[ "$("$task_cli" --version)" != "$task_initial_version" ]
 [ "$(cat "$task_source/revision")" = 'update fixture' ]
 [ -x "$task_exe" ]
 [ "$(git -C "$task_source" config --get-all credential.https://github.com.helper | wc -l | tr -d ' ')" = 2 ]

@@ -14,7 +14,7 @@ Aus einem vorhandenen Checkout genügt `./install.sh`. Der Installer baut lokal,
 tinystats          # starten
 tinystats status   # läuft die installierte App?
 tinystats stop     # die installierte App beenden
-tinystats version  # installierter Quellcode-Commit
+tinystats version  # Commit der tatsächlich installierten App
 tinystats update   # main abrufen, bauen, installieren und neu starten
 ```
 
@@ -29,3 +29,26 @@ Test des Installers ohne Eingriff in die echte Installation:
 ```
 
 Installationspfade lassen sich für Tests mit `TINYSTATS_HOME`, `TINYSTATS_APP_DIR` und `TINYSTATS_BIN_DIR` überschreiben. Dieselben Variablen gelten beim späteren CLI-Aufruf.
+
+## Wenn etwas nicht klappt
+
+- **`command not found: tinystats`:** Ein neues Terminal öffnen. Sofortiger Start geht mit `~/.local/bin/tinystats`.
+- **GitHub-Zugriff verweigert:** `gh auth status` prüfen und bei Bedarf `gh auth login` ausführen. Das Repository ist privat; Zugriff ist erforderlich. Der Installer speichert keine Tokens und ändert keine globalen Git-Einstellungen.
+- **Build fehlgeschlagen:** Fehlermeldung von Swift prüfen; `xcode-select --install` installiert die benötigten Apple-Werkzeuge. Die bisherige App bleibt erhalten. Nach Behebung `tinystats update` wiederholen.
+- **Lokale Änderungen im Installations-Checkout:** Änderungen unter `~/.local/share/tinystats/source` zuerst prüfen und bewusst sichern oder committen. Der Updater verwirft sie nicht automatisch.
+- **Installation läuft bereits:** Den laufenden Vorgang beenden lassen. Nach einem Rechnerabsturz kann ein leeres `~/.local/share/tinystats/install.lock` zurückbleiben. Nur wenn sicher kein Installer/Updater mehr läuft, dieses leere Verzeichnis mit `rmdir ~/.local/share/tinystats/install.lock` entfernen.
+- **App erscheint nicht:** `tinystats status` prüfen. Eine schon laufende Entwicklungsversion zunächst beenden; tinyStats verhindert mehrere App-Instanzen. Auf einem Notch-Display sitzt die Anzeige rechts an der Kameraaussparung.
+
+Der Update-Lock gilt von vor dem Abrufen bis zum Abschluss der Installation.
+`tinystats version` liest den Versionsnachweis aus der installierten App, nicht
+aus dem möglicherweise bereits weitergeschalteten Quellcode-Checkout. Bei einer
+älteren Installation ohne Versionsnachweis hilft einmal `tinystats update`.
+
+## Entfernen
+
+`tinystats stop` beendet die App. Zum Deinstallieren können anschließend
+`~/Applications/tinyStats.app`, `~/.local/bin/tinystats` und der verwaltete
+Ordner `~/.local/share/tinystats` entfernt werden. Vorher dortige eigene
+Quellcodeänderungen sichern. Der mit `# tinyStats CLI` markierte PATH-Eintrag
+in `~/.zprofile` ist optional entfernbar; andere Tools können denselben Ordner
+nutzen. Es gibt keinen Hintergrunddienst und keinen Autostart-Eintrag.

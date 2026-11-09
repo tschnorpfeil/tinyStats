@@ -1,7 +1,7 @@
 # tinyStats
 
 Kleines natives macOS-Werkzeug für CPU, GPU, RAM und Netzwerk, weiß auf
-schwarz. Ohne externe Abhängigkeiten, Konten oder Datenuploads.
+schwarz. Ohne Laufzeitabhängigkeiten oder Datenuploads. macOS 14 oder neuer; lokal aus Swift gebaut.
 
 ## Installieren und starten
 
@@ -118,8 +118,8 @@ beschrifteten Werte und vollständigen Netzwerkeinheiten.
   (`bezelPath` von NSScreen, nicht dokumentiert, nur gelesen) und nutzt ihn
   nur, wenn er auf einen Punkt genau mit den öffentlichen Werten
   übereinstimmt; sonst gilt die Safe Area. Die untere rechte Gehäuserundung
-  (hier 14,6 pt) liegt innerhalb der Überlappung. Die linke Rundung der Insel
-  setzt 18 pt neben der linken Gehäuseecke an der geraden Unterkante an.
+  (hier 14,6 pt) liegt innerhalb der Überlappung. Im geöffneten Zustand füllt eine schwarze Kappe hinter dem Gehäuse
+  auch dessen untere linke Rundung; die Details schließen links bündig ab.
 - In skalierten Auflösungen (etwa „1470 × 956“ auf dem 2560 × 1664-Panel)
   rechnet macOS das Bild auf das Panel herunter. Die gezeichnete Unterkante
   des Flügels liegt dann an derselben Stelle wie die Gehäusekante, bleibt
@@ -134,6 +134,8 @@ beschrifteten Werte und vollständigen Netzwerkeinheiten.
 ```sh
 swiftc -typecheck main.swift
 ./Tests/run.sh
+./Tests/install.sh
+./build.sh
 git diff --check
 ```
 

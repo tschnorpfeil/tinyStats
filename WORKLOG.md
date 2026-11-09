@@ -302,3 +302,13 @@ Corner-gap Sol R1 APPROVE (gpt-6.1-sol/high), no findings or declined items, usa
 User rejects integrated notch shoulders in normal menu bar mode. Add explicit floating presentation only for menuBar layout:6pt gap, convex rounded top corners matching bottom, content masked at all4corners, same compact content and interruptible source-centred motion. Notch layout/cap/wingunchanged. Focused geometry and real raster regression tests cover gap, rounded-top transparency and unchanged notch mode.
 
 Floating-menu Sol R1 APPROVE, no findings, gpt-6.1-sol/high; usage not returned. Typecheck/native geometry+raster tests/diffcheck re-run by reviewer pass; ownbuild pass. No behaviorchangesafterreview. Normalmenu now floating card only; notchshapeuntouched. Update and liveverificationfollow.
+
+## Distribution completion (full-send + sol-loop)
+- [x] Audit private GitHub main, installer, CLI, documentation.
+- [x] Fix installed version provenance after failed update; lock complete update including fetch.
+- [x] Add regressions for failed remote update/version preservation and concurrent-update rejection.
+- [x] Clarify prerequisites, troubleshooting, uninstall paths, full local checks and current notch contour.
+- [x] Complete local gates and Sol review.
+- [ ] Publish reviewed change, update real installation and verify CLI/runtime.
+
+Distribution Sol R1 APPROVE (gpt-6.1-sol/high), no findings, no declined findings, usage not exposed. Diff before/after review: 6 files, +70/-11 (plus this review record). Native tests, typecheck, build, installer regression and diff-check pass.

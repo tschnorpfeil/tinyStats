@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+case "${1:-}" in ""|--update) ;; *) echo "Aufruf: install.sh [--update]" >&2; exit 2 ;; esac
 [ "$(uname -s)" = Darwin ] || { echo 'tinyStats benötigt macOS.' >&2; exit 1; }
 command -v git >/dev/null || { echo 'Git fehlt. Installiere die Xcode Command Line Tools: xcode-select --install' >&2; exit 1; }
 command -v swiftc >/dev/null || { echo 'Swift fehlt. Installiere die Xcode Command Line Tools: xcode-select --install' >&2; exit 1; }
@@ -13,11 +14,16 @@ if [ -e "$task_bin/tinystats" ] && ! grep -Fq "# tinyStats CLI" "$task_bin/tinys
     exit 1
 fi
 # One installation/update at a time; a stale lock is reported rather than removed blindly.
-mkdir "$task_data/install.lock" 2>/dev/null || { echo "Installation läuft bereits (Lock: $task_data/install.lock)." >&2; exit 1; }
+task_owns_lock=true
+if [ "${TINYSTATS_INSTALL_LOCK_OWNER:-}" = "$PPID" ] && [ -d "$task_data/install.lock" ]; then
+    task_owns_lock=false
+else
+    mkdir "$task_data/install.lock" 2>/dev/null || { echo "Installation läuft bereits (Lock: $task_data/install.lock)." >&2; exit 1; }
+fi
 task_stage=
 cleanup() {
     [ -z "$task_stage" ] || rm -rf "$task_stage"
-    rmdir "$task_data/install.lock"
+    if [ "$task_owns_lock" = true ]; then rmdir "$task_data/install.lock"; fi
 }
 trap cleanup EXIT
 trap 'exit 130' INT
@@ -39,11 +45,21 @@ if command -v gh >/dev/null; then
     git -C "$task_source" config --replace-all credential.https://github.com.helper ""
     git -C "$task_source" config --add credential.https://github.com.helper "!gh auth git-credential"
 fi
+if [ "${1:-}" = --update ]; then
+    [ -z "$(git -C "$task_source" status --porcelain)" ] || { echo 'Lokale Änderungen im Installations-Checkout; Update abgebrochen.' >&2; exit 1; }
+    git -C "$task_source" fetch origin main
+    git -C "$task_source" merge --ff-only origin/main
+    # Run updated installer code, retaining the lock in this parent until it exits.
+    TINYSTATS_INSTALL_LOCK_OWNER=$$ "$task_source/install.sh"
+    exit $?
+fi
 # Compile before touching the installed app or its process.
 "$task_source/build.sh"
 task_stage=$(mktemp -d "$task_apps/.tinystats-install.XXXXXX")
 ditto "$task_source/tinyStats.app" "$task_stage/tinyStats.app"
 [ -x "$task_stage/tinyStats.app/Contents/MacOS/tinyStats" ] || { echo 'Build ist unvollständig.' >&2; exit 1; }
+mkdir -p "$task_stage/tinyStats.app/Contents/Resources"
+git -C "$task_source" log -1 --format='tinyStats %h (%cs)' > "$task_stage/tinyStats.app/Contents/Resources/version.txt"
 # Identify only this installation's executable, never every similarly named process.
 task_exe="$task_apps/tinyStats.app/Contents/MacOS/tinyStats"
 task_pids=$(ps -ax -o pid= -o comm= | while read -r task_pid task_comm; do

@@ -23,14 +23,12 @@ case "${1:-start}" in
         if [ -n "$task_pids" ]; then printf 'tinyStats läuft (PID %s).\n' "$task_pids"; else echo 'tinyStats ist beendet.'; fi
         ;;
     version|--version|-v)
-        git -C "$task_data/source" log -1 --format='tinyStats %h (%cs)'
+        [ -f "$task_app/Contents/Resources/version.txt" ] || { echo 'Versionsnachweis fehlt; tinystats update ausführen.' >&2; exit 1; }
+        cat "$task_app/Contents/Resources/version.txt"
         ;;
     update)
         [ -d "$task_data/source/.git" ] || { echo 'Verwalteter Quellcode fehlt. Bitte erneut installieren.' >&2; exit 1; }
-        [ -z "$(git -C "$task_data/source" status --porcelain)" ] || { echo 'Lokale Änderungen im Installations-Checkout; Update abgebrochen.' >&2; exit 1; }
-        git -C "$task_data/source" fetch origin main
-        git -C "$task_data/source" merge --ff-only origin/main
-        exec "$task_data/source/install.sh"
+        exec "$task_data/source/install.sh" --update
         ;;
     help|--help|-h)
         echo 'tinystats [start|stop|status|version|update]'
