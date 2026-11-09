@@ -371,15 +371,23 @@ assert(full.contains(NSPoint(x: body.minX + 0.3, y: body.maxY - 0.3)) &&
 let external = NSRect(x: 0, y: 0, width: 2560, height: 1440)
 let anchor = NSRect(x: 2000, y: 1413, width: 92, height: 24)
 let barLayout = IslandLayout.menuBar(anchor: anchor, screen: external, visibleTop: 1410, height: height)
-assert(barLayout.attachY == 1410 && barLayout.frame.maxY <= anchor.minY, "Attached at the bar edge, never over the status item")
-assert(barLayout.leftFillet == fillet && barLayout.rightFillet == fillet && barLayout.width == IslandLayout.menuBarWidth)
+assert(barLayout.attachY == 1404 && barLayout.frame.maxY <= anchor.minY, "Attached at the bar edge, never over the status item")
+assert(barLayout.isFloating && barLayout.leftFillet == 0 && barLayout.rightFillet == 0 && barLayout.width == IslandLayout.menuBarWidth)
 assert(abs((barLayout.final.lowerBound + barLayout.final.upperBound) / 2 - anchor.midX) <= 0.5, "Centred under the item")
-assert(IslandLayout.menuBar(anchor: anchor, screen: external, visibleTop: 1440, height: height).attachY == anchor.minY,
+assert(IslandLayout.menuBar(anchor: anchor, screen: external, visibleTop: 1440, height: height).attachY == anchor.minY - 6,
        "Auto-hidden bar: attach to the button edge")
 let edgeLayout = IslandLayout.menuBar(anchor: NSRect(x: 2500, y: 1413, width: 56, height: 24), screen: external,
                                       visibleTop: 1410, height: height)
-assert(edgeLayout.frame.maxX <= external.maxX - IslandLayout.screenMargin && edgeLayout.frame.contains(
-    NSPoint(x: edgeLayout.source.upperBound - 0.5, y: edgeLayout.frame.maxY - 0.5)), "Clamped at the screen edge, source still inside")
+assert(edgeLayout.frame.maxX <= external.maxX - IslandLayout.screenMargin,
+       "Floating card stays inside the display at the screen edge")
+let floatingBody = barLayout.finalBodyRect
+let floatingPath = barLayout.path(at: 1)
+for point in [NSPoint(x: floatingBody.minX + 0.5, y: floatingBody.maxY - 0.5),
+              NSPoint(x: floatingBody.maxX - 0.5, y: floatingBody.maxY - 0.5)] {
+    assert(!floatingPath.contains(point), "Normal menu bar uses convex rounded top corners, not notch shoulders")
+}
+assert(!notchLayout.isFloating && notchLayout.housingCapHeight > 0, "Notch mode keeps its integrated shape")
+
 let second = external.offsetBy(dx: -2560, dy: 0)
 let secondLayout = IslandLayout.menuBar(anchor: anchor.offsetBy(dx: -2560, dy: 0), screen: second, visibleTop: 1410, height: height)
 assert(secondLayout.frame == barLayout.frame.offsetBy(dx: -2560, dy: 0), "Secondary-screen origin honoured")
@@ -560,3 +568,16 @@ assert(!notchLayout.path(at: 0).contains(capTestPoint), "No housing cap remains 
 assert(!notchLayout.path(at: 1).contains(NSPoint(x: body.minX - 1, y: capTestPoint.y)), "Cap never protrudes left of the physical notch")
 assert(!barLayout.path(at: 1).contains(NSPoint(x: barLayout.finalBodyRect.midX, y: barLayout.frame.height + 1)), "Normal menu bar gets no housing cap")
 print("PASS: expanded housing corner gap filled, collapsed and menu-bar silhouettes unchanged")
+
+let floatingContent = IslandContentView(width: barLayout.width)
+floatingContent.update(cpu: 0.09, gpu: 0, ram: 0.55, net: NetworkRates(downloadBytesPerSecond: 1_100, uploadBytesPerSecond: 3_100))
+let floatingView = IslandView(content: floatingContent)
+floatingView.configure(barLayout)
+floatingView.setProgress(1)
+let floatingPixels = pixels(of: floatingView)
+assert(color(floatingPixels, floatingBody.minX + 1, floatingPixels.size.height - floatingBody.maxY + 1).alphaComponent < 0.01,
+       "Content clipping preserves rounded top corners in the actual menu-bar render")
+if let target = ProcessInfo.processInfo.environment["TINYSTATS_FLOATING_RENDER_PATH"] {
+    try! floatingPixels.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: target))
+}
+print("PASS: normal menu bar floats 6pt below source with rounded corners; notch geometry retained")

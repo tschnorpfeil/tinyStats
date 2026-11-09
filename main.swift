@@ -446,6 +446,7 @@ struct IslandLayout: Equatable {
     var leftFillet: CGFloat
     var rightFillet: CGFloat
     var housingCapHeight: CGFloat = 0
+    var isFloating: Bool = false
 
     /// Exact union of housing and compact wing: neither outer edge moves.
     /// Overlap the fractional lower edge to avoid a seam between windows.
@@ -459,14 +460,14 @@ struct IslandLayout: Equatable {
     static func menuBar(anchor: NSRect, screen: NSRect, visibleTop: CGFloat, height: CGFloat) -> IslandLayout {
         // The button is shorter than the bar; use the bar edge when the bar is reserved.
         let barBottom = visibleTop < screen.maxY - 0.5 ? min(anchor.minY, visibleTop) : anchor.minY
-        let low = screen.minX + screenMargin + fillet
-        let high = screen.maxX - screenMargin - fillet
+        let low = screen.minX + screenMargin
+        let high = screen.maxX - screenMargin
         let width = min(menuBarWidth, high - low)
         let minX = min(max((anchor.midX - width / 2).rounded(), low), high - width)
         let sourceLow = min(max(anchor.minX, low), high)
         let sourceHigh = max(min(anchor.maxX, high), sourceLow)
-        return IslandLayout(attachY: barBottom, source: sourceLow...sourceHigh, final: minX...(minX + width),
-                            height: height, leftFillet: fillet, rightFillet: fillet)
+        return IslandLayout(attachY: barBottom - 6, source: sourceLow...sourceHigh, final: minX...(minX + width),
+                            height: height, leftFillet: 0, rightFillet: 0, isFloating: true)
     }
 
     var width: CGFloat { final.upperBound - final.lowerBound }
@@ -510,6 +511,11 @@ struct IslandLayout: Equatable {
         let s = shape(at: progress)
         let path = NSBezierPath()
         guard s.height > 0.01, s.maxX - s.minX > 0.01 else { return path }
+        if isFloating {
+            let body = bodyRect(at: progress)
+            let radius = min(Self.cornerRadius, body.height / 2, body.width / 2)
+            return NSBezierPath(roundedRect: body, xRadius: radius, yRadius: radius)
+        }
         let left = s.minX - frame.minX, right = s.maxX - frame.minX
         let top = attachY - frame.minY, bottom = top - s.height
         path.move(to: NSPoint(x: left - s.leftFillet, y: top))
@@ -930,6 +936,9 @@ final class IslandView: NSView {
 
     func configure(_ layout: IslandLayout) {
         self.layout = layout
+        clip.layer?.maskedCorners = layout.isFloating
+            ? [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+            : [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         frame = NSRect(origin: .zero, size: layout.frame.size)
         content.layout(width: layout.width)
         setProgress(progress)

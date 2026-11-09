@@ -62,9 +62,9 @@ Menüleistensymbol.
 **Details.** Ein Klick auf Flügel oder Symbol lässt die Details als schwarze
 Insel aus der Quelle wachsen: an der Notch genau auf die Gesamtbreite aus
 Gehäuse und Flügel. Links schließt sie bündig mit der Notch ab, rechts mit dem
-unverändert breiten Flügel. In der
-Menüleiste zentriert unter dem Symbol mit konkaven Ansätzen an der Unterkante
-der Leiste. Inhalt:
+unverändert breiten Flügel. Im normalen Menüleistenmodus schwebt die Karte
+zentriert unter dem Symbol, mit 6 pt Abstand und rundum gerundeten Ecken.
+Die Notch-Anschlussform wird dort nicht verwendet. Inhalt:
 
 - CPU, GPU und RAM ≈ nebeneinander mit großem Wert und schmalem Balken,
 - Upload und Download in einer ruhigen Leiste darunter (Leserichtung wie in
