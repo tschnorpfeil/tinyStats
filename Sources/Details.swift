@@ -360,7 +360,7 @@ final class IslandContentView: NSView {
                 let item = NSMenuItem(title: metric.name, action: #selector(metricPicked(_:)), keyEquivalent: "")
                 item.target = self
                 item.tag = slot
-                item.representedObject = metric.rawValue
+                item.representedObject = metric
                 item.state = metric == current ? .on : .off
                 choicesMenu.addItem(item)
             }
@@ -395,7 +395,7 @@ final class IslandContentView: NSView {
     }
 
     @objc private func metricPicked(_ item: NSMenuItem) {
-        guard let raw = item.representedObject as? String, let metric = Metric(rawValue: raw) else { return }
+        guard let metric = item.representedObject as? Metric else { return }
         var layout = metricLayout
         if item.tag == Self.menuBarSlot { layout.menuBar = metric } else { layout.setTop(metric, at: item.tag) }
         change(layout)

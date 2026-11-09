@@ -260,21 +260,19 @@ assert(wing.frame.minY + wing.indicatorRect.minY == publicWing.frame.minY + publ
        wing.indicatorRect.minX == wing.junctionX + NotchWing.indicatorInset, "The indicator does not move")
 assert(wing.hitRect.minY == wing.bottomY, "Hit area is the visible wing")
 
-assert(NotchWing.make(screenFrame: scoutScreen, leftArea: nil, rightArea: nil, topInset: 0) == nil)
-assert(NotchWing.make(screenFrame: scoutScreen, leftArea: nil, rightArea: scoutRight, topInset: 32) == nil)
-assert(NotchWing.make(screenFrame: scoutScreen, leftArea: scoutLeft, rightArea: scoutRight, topInset: 0) == nil)
-assert(NotchWing.make(screenFrame: scoutScreen, leftArea: scoutLeft, rightArea: .zero, topInset: 32) == nil)
-assert(NotchWing.make(screenFrame: scoutScreen, leftArea: scoutLeft, rightArea: scoutRight, topInset: 20) == nil,
-       "Too low a safe area must fall back")
-assert(NotchWing.make(screenFrame: scoutScreen, leftArea: scoutLeft,
-                      rightArea: NSRect(x: 824.5, y: 800, width: 645.5, height: 32), topInset: 32) == nil,
-       "Area away from the top edge must fall back")
-assert(NotchWing.make(screenFrame: scoutScreen, leftArea: NSRect(x: 0, y: 924, width: 700, height: 32),
-                      rightArea: NSRect(x: 740, y: 924, width: 730, height: 32), topInset: 32) == nil,
-       "A gap narrower than a camera housing is not a notch")
-assert(NotchWing.make(screenFrame: scoutScreen, leftArea: scoutLeft,
-                      rightArea: NSRect(x: 1400, y: 924, width: 70, height: 32), topInset: 32) == nil,
-       "Too little room right of the housing must fall back")
+for (left, right, inset, reason): (NSRect?, NSRect?, CGFloat, String) in [
+    (nil, nil, 0, "No auxiliary areas, no notch"),
+    (nil, scoutRight, 32, "Both auxiliary areas are needed"),
+    (scoutLeft, scoutRight, 0, "No safe area, no notch"),
+    (scoutLeft, .zero, 32, "An empty area is no area"),
+    (scoutLeft, scoutRight, 20, "Too low a safe area must fall back"),
+    (scoutLeft, NSRect(x: 824.5, y: 800, width: 645.5, height: 32), 32, "Area away from the top edge must fall back"),
+    (NSRect(x: 0, y: 924, width: 700, height: 32), NSRect(x: 740, y: 924, width: 730, height: 32), 32,
+     "A gap narrower than a camera housing is not a notch"),
+    (scoutLeft, NSRect(x: 1400, y: 924, width: 70, height: 32), 32, "Too little room right of the housing must fall back"),
+] {
+    assert(NotchWing.make(screenFrame: scoutScreen, leftArea: left, rightArea: right, topInset: inset) == nil, reason)
+}
 let tallWing = NotchWing.make(screenFrame: NSRect(x: 0, y: 0, width: 1728, height: 1117),
                               leftArea: NSRect(x: 0, y: 1079, width: 776, height: 38),
                               rightArea: NSRect(x: 952, y: 1079, width: 776, height: 38), topInset: 38)!
