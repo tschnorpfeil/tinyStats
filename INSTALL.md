@@ -1,11 +1,11 @@
 # tinyStats installieren und aktualisieren
 
-Voraussetzungen: macOS 14 oder neuer, Apple Xcode Command Line Tools (`xcode-select --install`), Git. Für das private GitHub-Repo außerdem GitHub CLI und `gh auth login` mit Zugriff auf `tschnorpfeil/tinyStats`.
+Voraussetzungen: macOS 14 oder neuer, Apple Xcode Command Line Tools (`xcode-select --install`), Git. Kein GitHub-Konto erforderlich.
 
 Installation in einer Terminal-Zeile:
 
 ```sh
-gh repo clone tschnorpfeil/tinyStats && ./tinyStats/install.sh
+git clone https://github.com/tschnorpfeil/tinyStats.git && ./tinyStats/install.sh
 ```
 
 Aus einem vorhandenen Checkout genügt `./install.sh`. Der Installer baut lokal, installiert nach `~/Applications/tinyStats.app` und legt einen verwalteten Quellcode-Checkout unter `~/.local/share/tinystats/source` an. Der ursprüngliche Download-Ordner wird danach nicht mehr benötigt. Er legt `~/.local/bin/tinystats` an und ergänzt diesen Ordner bei Bedarf für neue zsh-Terminals in `~/.zprofile`. Ein vorhandener fremder `tinystats`-Befehl wird nicht überschrieben. Kein sudo, keine zusätzlichen Laufzeitabhängigkeiten, kein Autostart.
@@ -33,7 +33,6 @@ Installationspfade lassen sich für Tests mit `TINYSTATS_HOME`, `TINYSTATS_APP_D
 ## Wenn etwas nicht klappt
 
 - **`command not found: tinystats`:** Ein neues Terminal öffnen. Sofortiger Start geht mit `~/.local/bin/tinystats`.
-- **GitHub-Zugriff verweigert:** `gh auth status` prüfen und bei Bedarf `gh auth login` ausführen. Das Repository ist privat; Zugriff ist erforderlich. Der Installer speichert keine Tokens und ändert keine globalen Git-Einstellungen.
 - **Build fehlgeschlagen:** Fehlermeldung von Swift prüfen; `xcode-select --install` installiert die benötigten Apple-Werkzeuge. Die bisherige App bleibt erhalten. Nach Behebung `tinystats update` wiederholen.
 - **Lokale Änderungen im Installations-Checkout:** Änderungen unter `~/.local/share/tinystats/source` zuerst prüfen und bewusst sichern oder committen. Der Updater verwirft sie nicht automatisch.
 - **Installation läuft bereits:** Den laufenden Vorgang beenden lassen. Nach einem Rechnerabsturz kann ein leeres `~/.local/share/tinystats/install.lock` zurückbleiben. Nur wenn sicher kein Installer/Updater mehr läuft, dieses leere Verzeichnis mit `rmdir ~/.local/share/tinystats/install.lock` entfernen.
