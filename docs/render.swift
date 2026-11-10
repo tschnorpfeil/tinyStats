@@ -36,6 +36,22 @@ func stack(_ lines: [(text: String, font: NSFont, color: NSColor, gap: CGFloat)]
     }
 }
 
+// Draws a template image white at the canvas's own scale; NSImageView's tinting
+// rasterizes at 1x when cached into a bitmap.
+final class TintedImageView: NSView {
+    var image: NSImage?
+    override func draw(_ dirtyRect: NSRect) {
+        guard let image, let context = NSGraphicsContext.current?.cgContext else { return }
+        let rect = NSRect(x: (bounds.width - image.size.width) / 2, y: (bounds.height - image.size.height) / 2,
+                          width: image.size.width, height: image.size.height)
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        image.draw(in: rect)
+        context.setBlendMode(.sourceIn)
+        NSColor.white.setFill()
+        context.fill(rect)
+        context.endTransparencyLayer()
+    }
+}
 final class PreviewCanvas: NSView {
     var housing: NSRect?
     var menuBar = true
@@ -136,9 +152,8 @@ func canvas(_ scene: Scene) -> PreviewCanvas {
         view.indicator = indicator
         canvas.addSubview(view)
     } else {
-        let view = NSImageView(frame: NSRect(x: scene.anchor.midX - 29, y: scene.barBottom + 5, width: 58, height: 22))
+        let view = TintedImageView(frame: NSRect(x: scene.anchor.midX - 29, y: scene.barBottom + 5, width: 58, height: 22))
         view.image = indicator
-        view.contentTintColor = .white
         canvas.addSubview(view)
     }
     return canvas
@@ -338,9 +353,8 @@ hero.captions = stack(titled("tinyStats", "System stats beside your MacBook's no
                       x: slideSize.width / 2, midY: 318, centered: true)
 
 let facts = plainSlide()
-// 420 KB: `./build.sh && du -sh tinyStats.app`; update it with the app.
 let factLines = ["\(swiftLines.formatted(.number.locale(Locale(identifier: "en_US")))) lines of Swift",
-                 "No dependencies", "420 KB app", "No network access, no telemetry"]
+                 "No dependencies", "No network access, no telemetry", "Open source, MIT"]
 let factText = titled("Small on purpose.") + factLines.enumerated().map { ($0.element, subline, quiet, $0.offset == 0 ? 30 : 14) }
 let iconSide: CGFloat = 320, textWidth = factText.map { ($0.text as NSString).size(withAttributes: [.font: $0.font]).width }.max()!
 let iconX = ((slideSize.width - iconSide - 24 - textWidth) / 2).rounded()
