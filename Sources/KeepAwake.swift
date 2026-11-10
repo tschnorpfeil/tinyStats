@@ -5,10 +5,10 @@ import IOKit.pwr_mgt
 /// go dark, and closing the lid still sleeps. macOS drops the assertion when
 /// tinyStats quits, so nothing outlives the app.
 final class KeepAwake {
-    static let title = "Keep Awake"
+    static let title = "Keep Mac Awake"
     static let reason = "tinyStats: \(title)"
-    static let offHelp = "Keep Awake: Off"
-    static let onHelp = "Keep Awake: On. The display may still sleep; closing the lid still does."
+    static let offHelp = "Keeps your Mac from sleeping until you click again or quit tinyStats. The display can still turn off; closing the lid still puts the Mac to sleep."
+    static let onHelp = "Your Mac stays awake. Click to let it sleep again."
     private var assertion: IOPMAssertionID?
 
     var isOn: Bool { assertion != nil }

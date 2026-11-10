@@ -536,6 +536,10 @@ for width in [IslandLayout.minimumWidth, notchLayout.width, IslandLayout.menuBar
     assert(content.customizeButton.frame.maxX <= content.quitButton.frame.minX &&
            content.keepAwakeButton.frame.maxX <= content.customizeButton.frame.minX && content.keepAwakeButton.frame.minX >= 16 + 60,
            "Footer items do not collide at width \(width)")
+    for caption in [(false, true), (true, true), (true, false)].compactMap({ IslandContentView.keepAwakeCaption(on: $0.0, hovering: $0.1) }) {
+        let size = IslandStyle.text(caption, IslandStyle.footer, IslandStyle.primary).size().width
+        assert(IslandContentView.padding + size <= content.keepAwakeButton.frame.minX - IslandContentView.captionGap, "\(caption) fits the footer at width \(width)")
+    }
     assert(content.list.frame.minX == content.tiles[0].frame.minX && IslandContentView.columnWidth(inner: content.list.frame.width) == column,
            "Category columns line up under the tiles at width \(width)")
     let frames = content.subviews.map(\.frame)
@@ -577,13 +581,24 @@ assert(!awake.isOn && controls.keepAwake == false && controls.keepAwakeButton.ac
 var asked: [Bool] = []
 controls.onKeepAwakeToggle = { asked.append($0); return awake.set($0) }
 controls.keepAwakeButton.performClick(nil)
-assert(asked == [true] && awake.isOn && controls.keepAwake && controls.keepAwakeButton.isActive &&
+assert(asked == [true] && awake.isOn && controls.keepAwake && controls.keepAwakeButton.isOn &&
        controls.keepAwakeButton.accessibilityValue() as? String == "On", "One click turns it on")
 assert(ownAssertions().contains(KeepAwake.reason), "The assertion is registered with power management")
 assert(awake.set(true) && ownAssertions().filter { $0 == KeepAwake.reason }.count == 1, "Turning it on twice holds one assertion")
 controls.keepAwakeButton.performClick(nil)
-assert(asked == [true, false] && !awake.isOn && !controls.keepAwake && !controls.keepAwakeButton.isActive, "A second click turns it off")
+assert(asked == [true, false] && !awake.isOn && !controls.keepAwake && !controls.keepAwakeButton.isOn, "A second click turns it off")
 assert(!ownAssertions().contains(KeepAwake.reason), "Turning it off releases the assertion")
+assert(IslandContentView.keepAwakeCaption(on: false, hovering: false) == nil &&
+       IslandContentView.keepAwakeCaption(on: false, hovering: true) == "Keep Mac awake" &&
+       IslandContentView.keepAwakeCaption(on: true, hovering: false) == "Mac stays awake" &&
+       IslandContentView.keepAwakeCaption(on: true, hovering: true) == "Allow sleep", "Hover names the click; on is always named")
+assert(controls.keepAwakeButton.toolTip == KeepAwake.offHelp && KeepAwake.offHelp.contains("until you click again"), "The tooltip says what a click does before it")
+let cup = CupButton(label: KeepAwake.title)
+cup.reduceMotion = { true }
+cup.setOn(true, animated: true)
+assert(cup.level == 1, "Reduce Motion fills the cup at once")
+cup.setOn(false, animated: false)
+assert(cup.level == 0 && !cup.isOn)
 controls.onKeepAwakeToggle = { _ in false }
 controls.keepAwakeButton.performClick(nil)
 assert(!controls.keepAwake, "A refused assertion leaves the button off")

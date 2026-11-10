@@ -68,7 +68,7 @@ enum IslandStyle {
     }
 
     /// Starts at `x`, or ends there when `alignRight`; whole-point vertical centring keeps text crisp.
-    private static func centered(_ size: NSSize, x: CGFloat, in row: NSRect, alignRight: Bool) -> NSRect {
+    static func centered(_ size: NSSize, x: CGFloat, in row: NSRect, alignRight: Bool) -> NSRect {
         NSRect(x: alignRight ? x - size.width : x, y: row.minY + ((row.height - size.height) / 2).rounded(),
                width: size.width, height: size.height)
     }
@@ -224,9 +224,7 @@ final class MetricListView: ReadoutView {
 /// Quiet text action that brightens under the pointer.
 final class TextButton: NSButton {
     private var hovering = false { didSet { needsDisplay = true } }
-    var symbol: String? { didSet { needsDisplay = true } }
-    /// Draws in the primary colour without hover, for a control that is on.
-    var isActive = false { didSet { needsDisplay = true } }
+    private var symbol: String?
 
     convenience init(label: String, symbol: String? = nil) {
         self.init(frame: .zero)
@@ -245,13 +243,74 @@ final class TextButton: NSButton {
     override func mouseExited(with event: NSEvent) { hovering = false }
 
     override func draw(_ dirtyRect: NSRect) {
-        let color = hovering || isHighlighted || isActive ? IslandStyle.primary : IslandStyle.secondary
+        let color = hovering || isHighlighted ? IslandStyle.primary : IslandStyle.secondary
         if let symbol {
             IslandStyle.drawSymbol(symbol, NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [color])), x: bounds.maxX, in: bounds, alignRight: true)
             return
         }
         IslandStyle.drawCentered(IslandStyle.text(title, IslandStyle.footer, color), x: bounds.maxX, in: bounds, alignRight: true)
+    }
+}
+
+/// The Keep Awake toggle: an outlined cup that fills up when turned on and
+/// drains when turned off. Hovering tells the content view to name the click.
+final class CupButton: NSButton {
+    static let empty = "cup.and.saucer"
+    static let full = "cup.and.saucer.fill"
+    private(set) var hovering = false { didSet { needsDisplay = true; onHover?(hovering) } }
+    private(set) var isOn = false
+    var onHover: ((Bool) -> Void)?
+    var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    /// How full the cup is drawn, 0 to 1; animates through `animator()`.
+    @objc dynamic var level: CGFloat = 0 { didSet { needsDisplay = true } }
+
+    convenience init(label: String) {
+        self.init(frame: .zero)
+        title = label
+        isBordered = false
+        focusRingType = .none
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(label)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+
+    override class func defaultAnimation(forKey key: NSAnimatablePropertyKey) -> Any? {
+        key == "level" ? CABasicAnimation() : super.defaultAnimation(forKey: key)
+    }
+
+    /// Fills over about half a second, drains a little faster; Reduce Motion skips both.
+    func setOn(_ on: Bool, animated: Bool) {
+        isOn = on
+        let target: CGFloat = on ? 1 : 0
+        guard animated, !reduceMotion() else { level = target; return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = on ? 0.5 : 0.3
+            context.timingFunction = CAMediaTimingFunction(name: on ? .easeOut : .easeIn)
+            animator().level = target
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let color = hovering || isHighlighted || isOn ? IslandStyle.primary : IslandStyle.secondary
+        let configuration = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+        func image(_ name: String) -> NSImage? {
+            NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+        }
+        guard let outline = image(Self.empty), let filled = image(Self.full) else { return }
+        let rect = IslandStyle.centered(outline.size, x: bounds.maxX, in: bounds, alignRight: true)
+        outline.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        guard level > 0 else { return }
+        // Flipped view: the coffee rises from the bottom of the glyph.
+        NSGraphicsContext.saveGraphicsState()
+        NSRect(x: rect.minX, y: rect.maxY - rect.height * level, width: rect.width, height: rect.height * level).clip()
+        filled.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        NSGraphicsContext.restoreGraphicsState()
     }
 }
 
@@ -276,7 +335,7 @@ final class IslandContentView: NSView {
     let network = NetworkView()
     let list = MetricListView()
     let customizeButton = TextButton(label: "Settings", symbol: "gearshape")
-    let keepAwakeButton = TextButton(label: KeepAwake.title, symbol: "cup.and.saucer")
+    let keepAwakeButton = CupButton(label: KeepAwake.title)
     let quitButton = TextButton(label: "Quit")
     private var notchAvailable = false
     private var notchEnabled = false
@@ -295,6 +354,7 @@ final class IslandContentView: NSView {
         customizeButton.toolTip = "Settings"
         keepAwakeButton.target = self
         keepAwakeButton.action = #selector(keepAwakeClicked)
+        keepAwakeButton.onHover = { [weak self] _ in self?.needsDisplay = true }
         setKeepAwake(false)
         quitButton.target = NSApplication.shared
         quitButton.action = #selector(NSApplication.terminate(_:))
@@ -328,10 +388,17 @@ final class IslandContentView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         NSColor.black.setFill()
         dirtyRect.fill()
+        let row = NSRect(x: 0, y: Self.footerTop, width: bounds.width, height: Self.footerHeight)
+        // Beside the cup, what it does; it takes the wordmark's place while shown.
+        if let caption = Self.keepAwakeCaption(on: keepAwake, hovering: keepAwakeButton.hovering) {
+            let color = keepAwakeButton.hovering ? IslandStyle.primary : IslandStyle.secondary
+            IslandStyle.drawCentered(IslandStyle.text(caption, IslandStyle.footer, color),
+                                     x: keepAwakeButton.frame.minX - Self.captionGap, in: row, alignRight: true)
+            return
+        }
         let mark = NSMutableAttributedString(attributedString: IslandStyle.text("tiny", IslandStyle.footer, IslandStyle.tertiary))
         mark.append(IslandStyle.text("Stats", NSFont.systemFont(ofSize: 11, weight: .semibold), IslandStyle.secondary))
-        IslandStyle.drawCentered(mark, x: Self.padding,
-                                 in: NSRect(x: 0, y: Self.footerTop, width: bounds.width, height: Self.footerHeight))
+        IslandStyle.drawCentered(mark, x: Self.padding, in: row)
     }
 
     func update(_ sample: Sample) {
@@ -438,18 +505,28 @@ final class IslandContentView: NSView {
     }
 
     private(set) var keepAwake = false
+    static let captionGap: CGFloat = 6
 
-    /// A filled cup in the primary colour while the Mac is kept awake.
-    func setKeepAwake(_ on: Bool) {
+    /// Hovering names what a click does; while on, the footer says so without hovering.
+    static func keepAwakeCaption(on: Bool, hovering: Bool) -> String? {
+        switch (on, hovering) {
+        case (false, true): "Keep Mac awake"
+        case (true, true): "Allow sleep"
+        case (true, false): "Mac stays awake"
+        case (false, false): nil
+        }
+    }
+
+    func setKeepAwake(_ on: Bool, animated: Bool = false) {
         keepAwake = on
-        keepAwakeButton.symbol = on ? "cup.and.saucer.fill" : "cup.and.saucer"
-        keepAwakeButton.isActive = on
+        keepAwakeButton.setOn(on, animated: animated)
         keepAwakeButton.toolTip = on ? KeepAwake.onHelp : KeepAwake.offHelp
         keepAwakeButton.setAccessibilityValue(on ? "On" : "Off")
+        needsDisplay = true
     }
 
     @objc private func keepAwakeClicked() {
-        setKeepAwake(onKeepAwakeToggle?(!keepAwake) ?? false)
+        setKeepAwake(onKeepAwakeToggle?(!keepAwake) ?? false, animated: true)
     }
 
     @objc private func notchToggled() {
