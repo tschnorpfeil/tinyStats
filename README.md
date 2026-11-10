@@ -53,7 +53,7 @@ tinystats status   # check whether the app is running
 tinystats version  # installed version
 ```
 
-If the widget covers other menus, click the gear in the details and turn off “Show Beside Notch”.
+When other apps' menu bar icons reach the notch, tinyStats moves into the menu bar and returns beside the notch once there is room. To keep it in the menu bar, click the gear in the details and turn off “Show Beside Notch”.
 
 [Installation, troubleshooting and removal](INSTALL.md)
 

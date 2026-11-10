@@ -60,7 +60,7 @@ The update lock covers fetching through installation. `tinystats version` reads 
 - **Build failed:** Check the Swift error. Install Apple's tools with `xcode-select --install` if needed, then retry `tinystats update`. The installed app remains intact.
 - **Local changes in the installation checkout:** Review and back up or commit your changes under `~/.local/share/tinystats/source` before updating.
 - **Installation already running:** Let it finish. After a crash, an empty `~/.local/share/tinystats/install.lock` directory may remain. Only when no installer or updater is running, remove it with `rmdir ~/.local/share/tinystats/install.lock`.
-- **App not visible:** Run `tinystats status`. Quit any running development copy first; tinyStats prevents multiple instances. On a notched display, look to the right of the camera housing.
+- **App not visible:** Run `tinystats status`. Quit any running development copy first; tinyStats prevents multiple instances. On a notched display, look to the right of the camera housing; with a full menu bar it sits among the menu bar icons, or in the menu bar's overflow menu (»).
 
 ## Remove
 

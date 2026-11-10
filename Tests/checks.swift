@@ -412,6 +412,16 @@ for step in 1...103 {
     assert(!silhouette.contains(NSPoint(x: rect.maxX - 0.3, y: rect.minY + 0.3)) &&
            !silhouette.contains(NSPoint(x: rect.minX + 0.3, y: rect.minY + 0.3)), "Lower corners stay round at p \(p)")
 }
+// Room beside the status items: `wing` ends at wingMaxX; the flare and a gap must stay clear.
+let roomScreenMaxX = wing.wingMaxX + 500
+let roomNeeded = NotchWing.topFlare + WingRoom.gap
+assert(WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500 - roomNeeded), "Status items may come up to the gap")
+assert(!WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500 - roomNeeded + 1), "One point closer and the wing gives way")
+assert(!WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500), "Items touching the wing crowd it")
+assert(!WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: nil), "An overflowing menu bar has no room")
+assert(!WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500 - roomNeeded, returning: true) &&
+       WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500 - roomNeeded - WingRoom.hysteresis, returning: true),
+       "The wing returns only with room to spare, so it cannot flip back and forth")
 let openShape = notchLayout.shape(at: 1)
 assert(openShape.minX == notchLayout.final.lowerBound && openShape.maxX == notchLayout.final.upperBound &&
        openShape.height == height && openShape.radius == IslandLayout.cornerRadius)
