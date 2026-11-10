@@ -1,6 +1,6 @@
-<img src="docs/images/icon.png" alt="" width="96" align="right">
+<p align="center"><img src="docs/images/icon.png" alt="tinyStats icon" width="128"></p>
 
-# tinyStats
+<h1 align="center">tinyStats</h1>
 
 CPU, GPU, RAM and network activity beside your MacBook's notch. On displays without a notch, it lives in the menu bar. Click to open the details.
 
