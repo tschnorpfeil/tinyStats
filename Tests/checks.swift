@@ -391,13 +391,37 @@ assert(notchLayout.width == wing.notch.width + NotchWing.wingWidth && notchLayou
 assert(notchLayout.frame.minX + notchLayout.finalBodyRect.maxX == wing.wingMaxX,
        "Expanded right edge equals the unchanged compact wing")
 let startShape = notchLayout.shape(at: 0)
-assert(startShape.height == 0 && startShape.minX == wing.notch.maxX && startShape.maxX == wing.wingMaxX,
-       "Motion starts as the compact wing itself")
+assert(startShape.height == 0 && startShape.minX == wing.notch.minX && startShape.maxX == wing.wingMaxX,
+       "Motion starts as wide as housing and wing together")
 for step in 0...103 {
     let p = CGFloat(step) / 100
-    assert(abs(notchLayout.shape(at: p).maxX - wing.wingMaxX) < 1e-9,
-           "Wing and body share one right edge throughout the motion (p \(p))")
+    let shape = notchLayout.shape(at: p)
+    assert(abs(shape.maxX - wing.wingMaxX) < 1e-9 && abs(shape.minX - wing.notch.minX) < 1e-9,
+           "Housing, wing and body share both outer edges throughout: the island only drops (p \(p))")
 }
+let firstCorner = notchLayout.wingCorner(at: 0.0001)
+assert(abs(firstCorner.radius - NotchWing.bottomRadius) < 0.1 && abs(firstCorner.rise - NotchWing.bottomRadius) < 0.1,
+       "The drop starts with the wing's own corner, so nothing jumps on the first frame")
+assert(notchLayout.wingCorner(at: 1).rise == 0 && notchLayout.wingCorner(at: 1).radius == IslandLayout.cornerRadius,
+       "Open: the wing is square above the island's full corner")
+for step in 1...103 {
+    let p = CGFloat(step) / 100, shape = notchLayout.shape(at: p), before = notchLayout.shape(at: CGFloat(step - 1) / 100)
+    assert(shape.radius >= before.radius && shape.radius - before.radius <= shape.height - before.height + 1e-9,
+           "The corner only grows, and never faster than the island drops (p \(p))")
+    let silhouette = notchLayout.path(at: p), rect = notchLayout.bodyRect(at: p)
+    assert(!silhouette.contains(NSPoint(x: rect.maxX - 0.3, y: rect.minY + 0.3)) &&
+           !silhouette.contains(NSPoint(x: rect.minX + 0.3, y: rect.minY + 0.3)), "Lower corners stay round at p \(p)")
+}
+// Room beside the status items: `wing` ends at wingMaxX; the flare and a gap must stay clear.
+let roomScreenMaxX = wing.wingMaxX + 500
+let roomNeeded = NotchWing.topFlare + WingRoom.gap
+assert(WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500 - roomNeeded), "Status items may come up to the gap")
+assert(!WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500 - roomNeeded + 1), "One point closer and the wing gives way")
+assert(!WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500), "Items touching the wing crowd it")
+assert(!WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: nil), "An overflowing menu bar has no room")
+assert(!WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500 - roomNeeded, returning: true) &&
+       WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500 - roomNeeded - WingRoom.hysteresis, returning: true),
+       "The wing returns only with room to spare, so it cannot flip back and forth")
 let openShape = notchLayout.shape(at: 1)
 assert(openShape.minX == notchLayout.final.lowerBound && openShape.maxX == notchLayout.final.upperBound &&
        openShape.height == height && openShape.radius == IslandLayout.cornerRadius)
@@ -486,11 +510,13 @@ assert(settleFrame(opening, at: 1) <= 30, "Opening settles exactly within 500 ms
 let closing = Array(simulate([(1, Spring.opening, 1.5), (0, Spring.closing, 1)]).suffix(61))
 assert(closing.allSatisfy { (0...1).contains($0) }, "Closing never undershoots")
 for (a, b) in zip(closing, closing.dropFirst()) { assert(b <= a, "Closing never rebounds") }
-assert(closing.firstIndex(where: { $0 <= 0.05 })! <= 12, "Closing reaches 5 % within 200 ms")
-assert(settleFrame(closing, at: 0) <= 24, "Closing settles exactly within 400 ms")
+assert(closing.firstIndex(where: { $0 <= 0.05 })! <= 9, "Closing reaches 5 % within 150 ms")
+assert(settleFrame(closing, at: 0) <= 12, "Closing is gone within 200 ms, with no creeping tail")
+let lastMove = closing[settleFrame(closing, at: 0) - 2] - closing[settleFrame(closing, at: 0) - 1]
+assert(lastMove > 0.02, "The island is still moving when it reaches the notch, got \(lastMove)")
 assert(Spring.closing.response < Spring.opening.response, "Closing is quicker than opening")
 let reversal = simulate([(1, Spring.opening, 0.12), (0, Spring.closing, 0.1), (1, Spring.opening, 1.5)])
-for (a, b) in zip(reversal, reversal.dropFirst()) { assert(abs(b - a) <= 0.12, "Reversal stays continuous") }
+for (a, b) in zip(reversal, reversal.dropFirst()) { assert(abs(b - a) <= 0.14, "Reversal stays continuous") }
 assert(reversal.allSatisfy { (0...1).contains($0) }, "Reversal never leaves 0...1")
 assert(settleFrame(reversal, at: 1) <= 12 + 6 + 30, "Reversal settles within 500 ms of the last retarget")
 let closeReversal = simulate([(1, Spring.opening, 1), (0, Spring.closing, 0.08), (1, Spring.opening, 1)])
@@ -668,8 +694,9 @@ assert(islandContent.alphaValue == 0, "Content waits until the body has room")
 let fadingBody = notchLayout.bodyRect(at: 0.3)
 let fadingPixels = pixels(of: island)
 let fadingAlpha = color(fadingPixels, fadingBody.midX, fadingPixels.size.height - fadingBody.midY).alphaComponent
-assert(abs(fadingAlpha - Choreography.backgroundAlpha(0.3)) < 0.03 && fadingAlpha > 0.1 && fadingAlpha < 0.9,
-       "Silhouette renders translucent while it fades, got \(fadingAlpha)")
+assert(fadingAlpha > 0.99, "Beside the notch the silhouette is solid black from the first frame, got \(fadingAlpha)")
+let startBar = barLayout.shape(at: 0), openBar = barLayout.shape(at: 1)
+assert(startBar.maxX - startBar.minX < openBar.maxX - openBar.minX, "The floating card still spreads from its status item")
 print("PASS: island render monochrome, convex corners, content hidden while closed and early in the motion")
 
 let capTestPoint = NSPoint(x: body.minX + 1, y: notchLayout.attachY - notchLayout.frame.minY + 5)

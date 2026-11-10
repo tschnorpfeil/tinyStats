@@ -53,7 +53,8 @@ final class IslandView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let layout else { return }
-        NSColor.black.withAlphaComponent(Choreography.backgroundAlpha(progress)).setFill()
+        // The notch is solid black, so its extension is too; only the floating card fades in.
+        NSColor.black.withAlphaComponent(layout.isFloating ? Choreography.backgroundAlpha(progress) : 1).setFill()
         layout.path(at: progress).fill()
     }
 
@@ -291,6 +292,9 @@ final class IslandPresenter: NSObject {
 final class WingView: NSView {
     var wing: NotchWing? { didSet { needsDisplay = true } }
     var attach: CGFloat = 0 { didSet { if attach != oldValue { needsDisplay = true } } }
+    /// Radius (width) and rise (height) of the lower-right corner while the
+    /// island hangs below; nil draws the corner from `attach` alone.
+    var corner: NSSize? { didSet { if corner != oldValue { needsDisplay = true } } }
     var indicator: NSImage? { didSet { needsDisplay = true } }
     var onClick: (() -> Void)?
 
@@ -306,7 +310,7 @@ final class WingView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let wing else { return }
         NSColor.black.setFill()
-        wing.path(attach: attach).fill()
+        (corner.map { wing.path(radius: $0.width, rise: $0.height) } ?? wing.path(attach: attach)).fill()
         guard let indicator, let context = NSGraphicsContext.current else { return }
         let target = wing.indicatorRect
         context.saveGraphicsState()

@@ -149,6 +149,8 @@ func canvas(_ scene: Scene) -> PreviewCanvas {
         let view = WingView(frame: scene.wing.frame)
         view.wing = scene.wing
         view.attach = Choreography.attach(scene.progress)
+        let corner = scene.islandLayout.wingCorner(at: scene.progress)
+        view.corner = scene.progress > 0 ? NSSize(width: corner.radius, height: corner.rise) : nil
         view.indicator = indicator
         canvas.addSubview(view)
     } else {
@@ -379,15 +381,15 @@ for (index, view) in gallery.enumerated() {
 
 // MARK: - Demo animation
 
-/// Open, hold, close at the notch, stepped by the app's own spring at 100 Hz
-/// and played at 50 fps, so every motion gets 30+ frames at half speed.
-func writeDemo(to path: String) throws {
+/// Open, hold, close at the notch, stepped by the app's own spring in real
+/// time at 50 fps (GIF players slow anything faster down).
+func writeDemo(to path: String, scene: Scene = Scene()) throws {
     var frames: [(progress: CGFloat, delay: Double)] = [(0, 1.2)]
     var spring = Spring()
     for (target, parameters, hold) in [(1.0, Spring.opening, 2.4), (0.0, Spring.closing, 0.02)] {
         spring.retarget(target, parameters)
         repeat {
-            spring.advance(by: 0.01)
+            spring.advance(by: 0.02)
             frames.append((CGFloat(spring.value), 0.02))
         } while !spring.isSettled
         frames[frames.count - 1].delay = hold
@@ -396,14 +398,18 @@ func writeDemo(to path: String) throws {
                                                       frames.count, nil)!
     CGImageDestinationSetProperties(destination, [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]] as CFDictionary)
     for frame in frames {
-        let image = render(canvas(Scene(progress: frame.progress))).cgImage!
+        var scene = scene
+        scene.progress = frame.progress
+        let image = render(canvas(scene)).cgImage!
         CGImageDestinationAddImage(destination, image, [kCGImagePropertyGIFDictionary: [
             kCGImagePropertyGIFDelayTime: frame.delay, kCGImagePropertyGIFUnclampedDelayTime: frame.delay]] as CFDictionary)
     }
     guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
-    print("demo.gif: \(frames.count) frames")
+    print("\(path): \(frames.count) frames")
 }
 try writeDemo(to: "docs/images/demo.gif")
+// Product Hunt gallery size, 1270 x 760 px.
+try writeDemo(to: "docs/launch/demo.gif", scene: Scene(size: NSSize(width: 635, height: 380), x: 191))
 
 // The social preview carries the icon, so it renders after the icon code above.
 try writePreview(notch: true, social: true, to: "docs/images/social-preview.png")

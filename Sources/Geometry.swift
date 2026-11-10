@@ -136,21 +136,48 @@ struct NotchWing: Equatable {
     /// lower-right corner that squares off (`attach` → 1) while details hang
     /// below. Its width stays fixed throughout the transition.
     func path(attach: CGFloat) -> NSBezierPath {
-        let top = notch.maxY - frame.minY, edge = edgeX, flare = Self.topFlare
         let radius = Self.bottomRadius * (1 - min(1, max(0, attach)))
+        return path(radius: radius, rise: radius)
+    }
+
+    /// The lower-right corner as part of a larger arc: its centre sits `rise`
+    /// above the lower edge, so only the upper part of the arc lies in the wing
+    /// and the island below draws the rest. `rise == radius` is the free
+    /// corner, `rise == 0` a square one.
+    func path(radius: CGFloat, rise: CGFloat) -> NSBezierPath {
+        let top = notch.maxY - frame.minY, edge = edgeX, flare = Self.topFlare
         let path = NSBezierPath()
         path.move(to: NSPoint(x: 0, y: top))
         path.line(to: NSPoint(x: edge + flare, y: top))
         path.appendArc(withCenter: NSPoint(x: edge + flare, y: top - flare), radius: flare,
                        startAngle: 90, endAngle: 180, clockwise: false)
-        path.line(to: NSPoint(x: edge, y: bottomY + radius))
-        if radius > 0.01 {
-            path.appendArc(withCenter: NSPoint(x: edge - radius, y: bottomY + radius), radius: radius,
-                           startAngle: 0, endAngle: 270, clockwise: true)
+        path.line(to: NSPoint(x: edge, y: bottomY + rise))
+        if radius > 0.01, rise > 0.01 {
+            let sweep = asin(min(1, rise / radius)) * 180 / .pi
+            path.appendArc(withCenter: NSPoint(x: edge - radius, y: bottomY + rise), radius: radius,
+                           startAngle: 0, endAngle: -sweep, clockwise: true)
         }
         path.line(to: NSPoint(x: 0, y: bottomY))
         path.close()
         return path
+    }
+}
+
+/// Whether the wing fits beside the status items. macOS lays those out from
+/// the right edge towards the housing without knowing about the wing, so a
+/// full menu bar would end up underneath it.
+enum WingRoom {
+    /// Clear space kept between the wing and the first status item.
+    static let gap: CGFloat = 6
+    /// Extra room required before the wing returns, so it does not flip back and forth.
+    static let hysteresis: CGFloat = 12
+
+    /// `stripWidth` is how far the status items reach in from the display's
+    /// right edge; nil means macOS has already hidden some for lack of room.
+    static func fits(_ wing: NotchWing, screenMaxX: CGFloat, stripWidth: CGFloat?, returning: Bool = false) -> Bool {
+        guard let stripWidth else { return false }
+        let needed = wing.wingMaxX + NotchWing.topFlare + gap + (returning ? hysteresis : 0)
+        return screenMaxX - stripWidth >= needed
     }
 }
 
@@ -208,11 +235,18 @@ struct IslandLayout: Equatable {
     }
 
     func shape(at progress: CGFloat) -> Shape {
-        let grow = Choreography.widthProgress(progress)
+        // Beside the notch the island is as wide as housing and wing from the
+        // first frame and only drops, so the notch itself seems to extend.
+        // The card under the status item still spreads from its button.
+        let grow = isFloating ? Choreography.widthProgress(progress) : 1
         let minX = source.lowerBound + (final.lowerBound - source.lowerBound) * grow
         let maxX = source.upperBound + (final.upperBound - source.upperBound) * grow
         let h = min(height + Self.headroom, max(0, height * progress))
-        return Shape(minX: minX, maxX: maxX, height: h, radius: min(Self.cornerRadius, (maxX - minX) / 2, h))
+        // Beside the notch the lower corners start as the notch's own and grow
+        // while they travel down; the floating card rounds what it has.
+        let radius = isFloating ? min(Self.cornerRadius, (maxX - minX) / 2, h)
+            : min(Self.cornerRadius, NotchWing.bottomRadius + h)
+        return Shape(minX: minX, maxX: maxX, height: h, radius: radius)
     }
 
     func bodyRect(at progress: CGFloat) -> NSRect {
@@ -236,27 +270,46 @@ struct IslandLayout: Equatable {
         }
         let left = s.minX - frame.minX, right = s.maxX - frame.minX
         let top = attachY - frame.minY, bottom = top - s.height
-        path.move(to: NSPoint(x: left, y: top))
-        path.line(to: NSPoint(x: right, y: top))
-        path.line(to: NSPoint(x: right, y: bottom + s.radius))
-        if s.radius > 0.01 {
-            path.appendArc(withCenter: NSPoint(x: right - s.radius, y: bottom + s.radius),
-                           radius: s.radius, startAngle: 0, endAngle: 270, clockwise: true)
-        }
+        // While the body is shallower than its corner radius, the corner arcs
+        // reach above the attach line: `rise` is how far, `inset` where they
+        // cross it. The wing draws the upper part on the right, the housing
+        // cap below the one on the left.
+        let rise = max(0, s.radius - s.height), centreY = bottom + s.radius
+        let sweep = asin(min(1, rise / s.radius)) * 180 / .pi
+        let inset = s.radius - (s.radius * s.radius - rise * rise).squareRoot()
+        path.move(to: NSPoint(x: left + inset, y: top))
+        path.line(to: NSPoint(x: right - inset, y: top))
+        if rise == 0 { path.line(to: NSPoint(x: right, y: centreY)) }
+        path.appendArc(withCenter: NSPoint(x: right - s.radius, y: centreY),
+                       radius: s.radius, startAngle: -sweep, endAngle: 270, clockwise: true)
         path.line(to: NSPoint(x: left + s.radius, y: bottom))
-        if s.radius > 0.01 {
-            path.appendArc(withCenter: NSPoint(x: left + s.radius, y: bottom + s.radius),
-                           radius: s.radius, startAngle: 270, endAngle: 180, clockwise: true)
-        }
+        path.appendArc(withCenter: NSPoint(x: left + s.radius, y: centreY),
+                       radius: s.radius, startAngle: 270, endAngle: 180 + sweep, clockwise: true)
         path.close()
-        // Fill the housing's lower-left rounded cutout as the island reaches
-        // its left edge. The cap stays strictly inside the housing bounds;
-        // the wing's visible width and the content position do not change.
-        let capRight = min(source.lowerBound, s.maxX) - frame.minX
-        if housingCapHeight > 0, capRight > left {
-            path.appendRect(NSRect(x: left, y: top, width: capRight - left, height: housingCapHeight))
+        // Fill the housing's lower-left rounded cutout down to the same arc.
+        // The cap stays strictly inside the housing bounds; the wing's visible
+        // width and the content position do not change.
+        let capRight = source.lowerBound - frame.minX
+        if housingCapHeight > 0, capRight > left + inset {
+            path.move(to: NSPoint(x: left + inset, y: top))
+            path.line(to: NSPoint(x: capRight, y: top))
+            path.line(to: NSPoint(x: capRight, y: top + housingCapHeight))
+            path.line(to: NSPoint(x: left, y: top + housingCapHeight))
+            path.line(to: NSPoint(x: left, y: max(top, centreY)))
+            if rise > 0 {
+                path.appendArc(withCenter: NSPoint(x: left + s.radius, y: centreY),
+                               radius: s.radius, startAngle: 180, endAngle: 180 + sweep, clockwise: false)
+            }
+            path.close()
         }
         return path
+    }
+
+    /// Radius and rise of the wing's lower-right corner while the island hangs
+    /// below it: the same arc the island's own path continues.
+    func wingCorner(at progress: CGFloat) -> (radius: CGFloat, rise: CGFloat) {
+        let s = shape(at: progress)
+        return (s.radius, max(0, s.radius - s.height))
     }
 }
 
@@ -265,7 +318,7 @@ struct IslandLayout: Equatable {
 /// Pure functions of the presentation progress (0 closed, 1 open; the
 /// spring keeps it inside that range). Drawing, reversals and render checks share them.
 enum Choreography {
-    /// Width leads height slightly, so the shape first spreads, then drops.
+    /// Floating card only: width leads height slightly, so the shape first spreads, then drops.
     static func widthProgress(_ p: CGFloat) -> CGFloat {
         let t = min(max(p / 0.8, 0), 1)
         return 1 - (1 - t) * (1 - t)
@@ -277,7 +330,7 @@ enum Choreography {
     static func contentAlpha(_ p: CGFloat) -> CGFloat { smoothstep(0.55, 0.95, p) }
     /// Content settles downward into place while the body opens.
     static func contentDrop(_ p: CGFloat) -> CGFloat { 8 * (1 - smoothstep(0.3, 1, p)) }
-    /// Squares the wing's lower-right corner as the body fades in below it.
+    /// Squares the wing's lower-right corner while details hang below it.
     static func attach(_ p: CGFloat) -> CGFloat { smoothstep(0, 0.3, p) }
 
     static func smoothstep(_ a: CGFloat, _ b: CGFloat, _ x: CGFloat) -> CGFloat {
@@ -298,13 +351,20 @@ struct Spring {
         /// Damping ratio ζ; 1 is critical damping, the fastest motion that
         /// never overshoots.
         var damping: Double
+        /// How far past the target the spring aims, in progress units. The
+        /// value still stops at the target, but arrives there moving instead
+        /// of creeping in over the spring's long tail.
+        var reach: Double = 0
     }
     // From rest, critical damping reaches 95 % after 0.755 × response and
     // settles below half a per-mille after 1.47 × response. Opening: 95 % at
-    // ~240 ms; closing is quicker: 95 % at ~180 ms. The choreography fades the
-    // content in over the last part of opening and out first when closing.
+    // ~240 ms, then it settles into place. Closing aims a tenth past closed,
+    // so the island is gone after ~150 ms and still moving when it vanishes
+    // into the notch; without the reach its last points took another 200 ms.
+    // The choreography fades the content in over the last part of opening
+    // and out first when closing.
     static let opening = Parameters(response: 0.32, damping: 1)
-    static let closing = Parameters(response: 0.24, damping: 1)
+    static let closing = Parameters(response: 0.24, damping: 1, reach: 0.1)
 
     private(set) var value: Double = 0
     private(set) var velocity: Double = 0
@@ -330,9 +390,10 @@ struct Spring {
         let friction = 4 * Double.pi * parameters.damping / parameters.response
         // A stalled frame slows the motion down instead of making it jump.
         var remaining = min(interval, 1.0 / 15)
+        let attractor = target + (target > value ? parameters.reach : -parameters.reach)
         while remaining > 0 {
             let step = min(1.0 / 480, remaining)
-            velocity += (-stiffness * (value - target) - friction * velocity) * step
+            velocity += (-stiffness * (value - attractor) - friction * velocity) * step
             value += velocity * step
             // Hard guard against any overshoot, including fast double reversals.
             if value < 0 || value > 1 {

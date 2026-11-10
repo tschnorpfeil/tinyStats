@@ -38,6 +38,16 @@ final class App: NSObject, NSApplicationDelegate {
     private lazy var wingPanel = WingPanel()
     private var wing: NotchWing?
     private var timer: Timer?
+    /// The wing the user asked for, whether or not it currently fits.
+    private var wantedWing: NotchWing?
+    /// Other apps' status items reach into the wing's place: tinyStats shows
+    /// as a status item until there is room again.
+    private var crowded = false
+    private var roomVotes = 0
+    /// Invisible status item left of all others: its right edge is where they begin.
+    private var probe: NSStatusItem?
+    private var probeAge = 0
+    private static let probeName = "RoomProbe"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let button = status.button else { return }
@@ -62,6 +72,8 @@ final class App: NSObject, NSApplicationDelegate {
             // A card floating under the status item leaves the wing alone.
             let attached = presenter.view.layout?.isFloating == false
             wingPanel.wingView.attach = attached ? Choreography.attach(progress) : 0
+            let corner = attached && progress > 0 ? presenter.view.layout?.wingCorner(at: progress) : nil
+            wingPanel.wingView.corner = corner.map { NSSize(width: $0.radius, height: $0.rise) }
         }
         presenter.onPresentedChange = { [weak self] shown in
             let highlighted = shown && self?.presenter.view.layout?.isFloating == true
@@ -100,13 +112,18 @@ final class App: NSObject, NSApplicationDelegate {
         self.timer = timer
     }
 
-    /// Re-evaluates the connected displays; the status item returns when no notch is left.
+    /// Re-evaluates the connected displays; the status item returns when no
+    /// notch is left or the wing would cover other status items.
     private func updatePlacement() {
         let available = NotchWing.firstAvailable(on: NSScreen.screens)
         let enabled = UserDefaults.standard.bool(forKey: Self.notchDefaultsKey)
         content.setNotchOption(available: available != nil, enabled: enabled)
         presenter.close(animated: false)
-        wing = enabled ? available : nil
+        wantedWing = enabled ? available : nil
+        if wantedWing == nil { crowded = false }
+        roomVotes = 0
+        placeProbe()
+        wing = crowded ? nil : wantedWing
         if let wing {
             wingPanel.place(wing)
             wingPanel.orderFrontRegardless()
@@ -118,10 +135,60 @@ final class App: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Keeps the probe while a wing is wanted. Its saved position is far
+    /// beyond the display, which sorts it left of every other status item,
+    /// including ones that apps add later. It is 1 pt of nothing; when the
+    /// menu bar overflows, macOS hides it first.
+    private func placeProbe() {
+        guard wantedWing != nil else {
+            if let probe { NSStatusBar.system.removeStatusItem(probe) }
+            return probe = nil
+        }
+        guard probe == nil else { return }
+        UserDefaults.standard.set(100_000, forKey: "NSStatusItem Preferred Position \(Self.probeName)")
+        let item = NSStatusBar.system.statusItem(withLength: 1)
+        item.autosaveName = Self.probeName
+        item.button?.setAccessibilityElement(false)
+        probe = item
+        probeAge = 0
+    }
+
+    /// Once a second: gives the wing's place to other apps' status items when
+    /// they reach it, and takes it back when they leave. Two equal readings in
+    /// a row decide, and nothing moves while the details are open.
+    private func checkRoom() {
+        guard let wantedWing, !presenter.isPresented else { return }
+        probeAge += 1
+        // A new item reports its place only after the menu bar has laid it out.
+        guard probeAge >= 2, let window = probe?.button?.window, let probeScreen = window.screen,
+              let wingScreen = NSScreen.screens.first(where: { $0.frame.contains(wantedWing.frame) }),
+              // A hidden menu bar (full screen, auto-hide) says nothing about room.
+              NSApp.currentSystemPresentationOptions.isDisjoint(with: [.autoHideMenuBar, .hideMenuBar]),
+              wingScreen.visibleFrame.maxY < wingScreen.frame.maxY - 0.5,
+              // Nor does a covered one (lock screen, screen saver): the wing is then covered as well.
+              crowded || wingPanel.occlusionState.contains(.visible) else { return }
+        // Not visible although the menu bar is: macOS moved items into its overflow menu.
+        var stripWidth: CGFloat? = window.occlusionState.contains(.visible) ? probeScreen.frame.maxX - window.frame.maxX : nil
+        // The status item leaves again when the wing returns.
+        let ownItemLeaves = !wantedWing.needsStatusItem(screens: NSScreen.screens.map(\.frame),
+                                                         separateSpaces: NSScreen.screensHaveSeparateSpaces)
+        if crowded, ownItemLeaves, let own = status.button?.window, own.occlusionState.contains(.visible) {
+            stripWidth = stripWidth.map { $0 - own.frame.width }
+        }
+        let fits = WingRoom.fits(wantedWing, screenMaxX: wingScreen.frame.maxX, stripWidth: stripWidth, returning: crowded)
+        guard fits == crowded else { return roomVotes = 0 }
+        roomVotes += 1
+        if roomVotes >= 2 {
+            crowded.toggle()
+            updatePlacement()
+        }
+    }
+
     private func sample() {
         lastSample = metrics.sample()
         content.update(lastSample)
         refreshIndicator()
+        checkRoom()
     }
 
     /// Also runs on a layout change, so a new choice shows without waiting for the next sample.
