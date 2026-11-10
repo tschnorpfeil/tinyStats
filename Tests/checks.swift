@@ -533,7 +533,8 @@ for width in [IslandLayout.minimumWidth, notchLayout.width, IslandLayout.menuBar
     assert(widest <= column, "100 % fits a column at width \(width)")
     let rate = IslandStyle.measure(Format.rate(999_949_999), number: IslandStyle.rate, unit: IslandStyle.rateUnit).size().width
     assert(25 + rate <= content.network.frame.width / 2 - 4, "Longest rate fits half the tray at width \(width)")
-    assert(content.customizeButton.frame.maxX <= content.quitButton.frame.minX && content.customizeButton.frame.minX >= 16 + 60,
+    assert(content.customizeButton.frame.maxX <= content.quitButton.frame.minX &&
+           content.keepAwakeButton.frame.maxX <= content.customizeButton.frame.minX && content.keepAwakeButton.frame.minX >= 16 + 60,
            "Footer items do not collide at width \(width)")
     assert(content.list.frame.minX == content.tiles[0].frame.minX && IslandContentView.columnWidth(inner: content.list.frame.width) == column,
            "Category columns line up under the tiles at width \(width)")
@@ -563,6 +564,29 @@ assert(notchMenu.items.map(\.title).firstIndex(of: IslandContentView.notchOption
        "The option sits directly below the menu bar choice")
 assert(controls.quitButton.target === NSApp && controls.quitButton.action == #selector(NSApplication.terminate(_:)) &&
        controls.quitButton.accessibilityRole() == .button)
+// Keep Awake: a real assertion, shown in the footer, released on the second click.
+let awake = KeepAwake()
+func ownAssertions() -> [String] {
+    var byProcess: Unmanaged<CFDictionary>?
+    guard IOPMCopyAssertionsByProcess(&byProcess) == kIOReturnSuccess,
+          let all = byProcess?.takeRetainedValue() as? [Int: [[String: Any]]] else { return [] }
+    return (all[Int(ProcessInfo.processInfo.processIdentifier)] ?? []).compactMap { $0[kIOPMAssertionNameKey] as? String }
+}
+assert(!awake.isOn && controls.keepAwake == false && controls.keepAwakeButton.accessibilityValue() as? String == "Off",
+       "Keep Awake starts off")
+var asked: [Bool] = []
+controls.onKeepAwakeToggle = { asked.append($0); return awake.set($0) }
+controls.keepAwakeButton.performClick(nil)
+assert(asked == [true] && awake.isOn && controls.keepAwake && controls.keepAwakeButton.isActive &&
+       controls.keepAwakeButton.accessibilityValue() as? String == "On", "One click turns it on")
+assert(ownAssertions().contains(KeepAwake.reason), "The assertion is registered with power management")
+assert(awake.set(true) && ownAssertions().filter { $0 == KeepAwake.reason }.count == 1, "Turning it on twice holds one assertion")
+controls.keepAwakeButton.performClick(nil)
+assert(asked == [true, false] && !awake.isOn && !controls.keepAwake && !controls.keepAwakeButton.isActive, "A second click turns it off")
+assert(!ownAssertions().contains(KeepAwake.reason), "Turning it off releases the assertion")
+controls.onKeepAwakeToggle = { _ in false }
+controls.keepAwakeButton.performClick(nil)
+assert(!controls.keepAwake, "A refused assertion leaves the button off")
 controls.update(Sample(cpu: nil, gpu: 0, ram: 0.5, net: nil))
 assert(controls.tiles[0].accessibilityValue() as? String == "Not available" && controls.tiles[1].accessibilityValue() as? String == "0 %")
 assert((controls.network.accessibilityValue() as? String)?.contains("not available") == true)
