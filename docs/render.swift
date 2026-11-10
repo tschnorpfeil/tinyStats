@@ -199,19 +199,21 @@ func writePreview(notch: Bool, collapsed: Bool = false, social: Bool = false, to
     let view = canvas(scene)
     if social {
         view.captions = [
-            Caption(text: "tinyStats", font: .systemFont(ofSize: 43, weight: .semibold), origin: NSPoint(x: 32, y: 194)),
+            Caption(text: "tinyStats", font: .systemFont(ofSize: 43, weight: .semibold), origin: NSPoint(x: 32, y: 170)),
             Caption(text: "Your Mac, at a glance.", font: .systemFont(ofSize: 17, weight: .regular),
-                    color: .white.withAlphaComponent(0.8), origin: NSPoint(x: 34, y: 162)),
+                    color: .white.withAlphaComponent(0.8), origin: NSPoint(x: 34, y: 138)),
             Caption(text: "CPU · GPU · RAM · Battery · Disk · Network", font: .systemFont(ofSize: 14, weight: .medium),
                     color: .white.withAlphaComponent(0.7), origin: NSPoint(x: 34, y: 42)),
         ]
+        let mark = NSImage(size: NSSize(width: 60, height: 60))
+        mark.addRepresentation(icon(pixels: 240))
+        view.images = [(mark, NSRect(x: 27, y: 222, width: 60, height: 60))]
     }
     try write(render(view), to: path)
 }
 try writePreview(notch: true, to: "docs/images/notch.png")
 try writePreview(notch: false, to: "docs/images/menu-bar.png")
 try writePreview(notch: true, collapsed: true, to: "docs/images/notch-collapsed.png")
-try writePreview(notch: true, social: true, to: "docs/images/social-preview.png")
 
 // MARK: - App icon
 
@@ -402,3 +404,6 @@ func writeDemo(to path: String) throws {
     print("demo.gif: \(frames.count) frames")
 }
 try writeDemo(to: "docs/images/demo.gif")
+
+// The social preview carries the icon, so it renders after the icon code above.
+try writePreview(notch: true, social: true, to: "docs/images/social-preview.png")
