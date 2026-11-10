@@ -1,5 +1,16 @@
 # Install and update tinyStats
 
+## Download
+
+Requires macOS 14+, on Apple Silicon or Intel. Open [tinyStats.dmg](https://github.com/tschnorpfeil/tinyStats/releases/latest/download/tinyStats.dmg) and drag tinyStats to Applications. The app is signed with a Developer ID and notarized by Apple, so it opens without a Gatekeeper warning.
+
+- **Quit:** open the details and click Quit.
+- **Start at login:** add tinyStats under System Settings → General → Login Items. It doesn't register itself.
+- **Update:** quit, download the new version and replace the app in Applications. There is no automatic updater.
+- **Remove:** quit and move the app to the Trash.
+
+The download has no `tinystats` terminal command; that comes with Homebrew and the Git installer below. Use one installation at a time.
+
 ## Homebrew
 
 ```sh

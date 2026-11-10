@@ -1,7 +1,7 @@
 class Tinystats < Formula
   desc "CPU, GPU, RAM and network activity beside the MacBook notch"
   homepage "https://github.com/tschnorpfeil/tinyStats"
-  url "https://github.com/tschnorpfeil/tinyStats.git", tag: "v2.1"
+  url "https://github.com/tschnorpfeil/tinyStats.git", tag: "v2.2"
   head "https://github.com/tschnorpfeil/tinyStats.git", branch: "main"
 
   depends_on macos: :sonoma
