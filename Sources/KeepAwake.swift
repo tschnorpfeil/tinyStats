@@ -8,7 +8,7 @@ final class KeepAwake {
     static let title = "Keep Mac Awake"
     static let reason = "tinyStats: \(title)"
     static let offHelp = "Keeps your Mac from sleeping until you click again or quit tinyStats. The display can still turn off; closing the lid still puts the Mac to sleep."
-    static let onHelp = "Your Mac stays awake. Click to let it sleep again."
+    static let onHelp = "Your Mac stays awake while the lid is open. Click to let it sleep again."
     private var assertion: IOPMAssertionID?
 
     var isOn: Bool { assertion != nil }
