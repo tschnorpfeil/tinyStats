@@ -57,7 +57,7 @@ fi
 task_version=$(sed -n 's|.*<key>CFBundleShortVersionString</key><string>\(.*\)</string>.*|\1|p' build.sh)
 [ -n "$task_version" ] || { echo 'Version not found in build.sh.' >&2; exit 1; }
 if [ "$task_unsigned" = true ]; then
-    TINYSTATS_UNIVERSAL=1 ./build.sh "tinyStats $task_version"
+    TINYSTATS_UNIVERSAL=1 TINYSTATS_SIGN_IDENTITY= ./build.sh "tinyStats $task_version"
 else
     TINYSTATS_UNIVERSAL=1 TINYSTATS_SIGN_IDENTITY="$task_identity" ./build.sh "tinyStats $task_version"
 fi
