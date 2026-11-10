@@ -6,7 +6,7 @@ Requires macOS 14+, on Apple Silicon or Intel. Open [tinyStats.dmg](https://gith
 
 - **Quit:** open the details and click Quit.
 - **Start at login:** add tinyStats under System Settings → General → Login Items. It doesn't register itself.
-- **Update:** quit, download the new version and replace the app in Applications. There is no automatic updater.
+- **Update:** click the gear in the details and choose “Check for Updates…” to open the latest release. Quit, download the new version and replace the app in Applications. There is no automatic updater.
 - **Remove:** quit and move the app to the Trash.
 
 The download has no `tinystats` terminal command; that comes with Homebrew and the Git installer below. Use one installation at a time.

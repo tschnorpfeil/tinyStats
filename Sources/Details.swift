@@ -385,8 +385,23 @@ final class IslandContentView: NSView {
         reset.target = self
         reset.isEnabled = metricLayout != MetricLayout()
         menu.addItem(reset)
+        menu.addItem(.separator())
+        // tinyStats itself makes no network connections; the browser shows the latest release.
+        let updates = NSMenuItem(title: Self.updatesTitle, action: #selector(updatesPicked), keyEquivalent: "")
+        updates.target = self
+        updates.toolTip = Self.versionLine
+        menu.addItem(updates)
         return menu
     }
+
+    static let updatesTitle = "Check for Updates…"
+    static let releasesURL = URL(string: "https://github.com/tschnorpfeil/tinyStats/releases/latest")!
+    static var versionLine: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        return version.map { "Installed: tinyStats \($0)" } ?? "Installed: development build"
+    }
+
+    @objc private func updatesPicked() { NSWorkspace.shared.open(Self.releasesURL) }
 
     private func change(_ layout: MetricLayout) {
         guard layout != metricLayout else { return }

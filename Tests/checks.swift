@@ -858,7 +858,13 @@ func menuItem(_ section: String, _ name: String) -> (NSMenu, Int) {
 }
 let opened = customizing.customizationMenu()
 assert(opened.items.map(\.title).prefix(3) == ["Top Left: CPU", "Top Middle: GPU", "Top Right: RAM"] && opened.items[4].title == "Menu Bar: Network")
-assert(opened.items.last?.title == "Reset to Defaults" && opened.items.last?.isEnabled == false, "Nothing to reset yet")
+func resetItem(_ menu: NSMenu) -> NSMenuItem { menu.items.first { $0.title == "Reset to Defaults" }! }
+assert(resetItem(opened).isEnabled == false, "Nothing to reset yet")
+let updates = opened.items.last!
+assert(updates.title == IslandContentView.updatesTitle && updates.isEnabled && opened.items[opened.items.count - 2].isSeparatorItem,
+       "Updates come last, behind a separator")
+assert(IslandContentView.releasesURL.absoluteString == "https://github.com/tschnorpfeil/tinyStats/releases/latest" && updates.toolTip?.hasPrefix("Installed: ") == true,
+       "The browser shows the latest release; the app itself makes no network connection")
 assert(opened.items[0].submenu!.items.map(\.title) == ["CPU", "GPU", "RAM", "Battery", "Disk"], "Tiles offer gauges only")
 assert(opened.items[0].submenu!.items[0].state == .on && opened.items[0].submenu!.items[1].state == .off)
 let barPicker = opened.items[4].submenu!.items
@@ -876,7 +882,7 @@ let (barMenu, swapIndex) = menuItem("Menu Bar", "Swap")
 barMenu.performActionForItem(at: swapIndex)
 assert(customizing.metricLayout.menuBar == .swap && reported?.menuBar == .swap)
 assert(customizing.customizationMenu().items[4].title == "Menu Bar: Swap")
-let reset = customizing.customizationMenu().items.last!
+let reset = resetItem(customizing.customizationMenu())
 assert(reset.isEnabled)
 _ = (reset.target as! NSObject).perform(reset.action, with: reset)
 assert(customizing.metricLayout == MetricLayout() && reported == MetricLayout())
