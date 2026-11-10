@@ -18,7 +18,7 @@ The three bars match the three tiles in the details: CPU, GPU and RAM by default
 
 To customize, click the gear in the details. Each tile can show CPU, GPU, RAM, Battery or Disk, and the menu bar can show any one metric instead of network activity. “Check for Updates…” in the same menu opens the latest release in your browser; tinyStats itself never goes online.
 
-The cup beside the gear keeps your Mac awake, like `caffeinate -i`: downloads and builds keep running while the display may still go dark. Closing the lid still puts the Mac to sleep, unless it's on power with an external display. Click again to turn it off; quitting tinyStats turns it off too.
+The cup beside the gear keeps your Mac awake, like `caffeinate -i`. Point at it and the footer says what a click does. Click and the cup fills up; while it's full, the footer reads “Mac stays awake”. Downloads and builds keep running, but the display can still turn off, and closing the lid still puts the Mac to sleep unless it's on power with an external display. Click again, or quit tinyStats, to let it sleep.
 
 tinyStats is about 2,000 lines of Swift on AppKit, with no dependencies. It makes no network connections, starts nothing in the background and has no Dock icon.
 
