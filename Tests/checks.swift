@@ -399,6 +399,19 @@ for step in 0...103 {
     assert(abs(shape.maxX - wing.wingMaxX) < 1e-9 && abs(shape.minX - wing.notch.minX) < 1e-9,
            "Housing, wing and body share both outer edges throughout: the island only drops (p \(p))")
 }
+let firstCorner = notchLayout.wingCorner(at: 0.0001)
+assert(abs(firstCorner.radius - NotchWing.bottomRadius) < 0.1 && abs(firstCorner.rise - NotchWing.bottomRadius) < 0.1,
+       "The drop starts with the wing's own corner, so nothing jumps on the first frame")
+assert(notchLayout.wingCorner(at: 1).rise == 0 && notchLayout.wingCorner(at: 1).radius == IslandLayout.cornerRadius,
+       "Open: the wing is square above the island's full corner")
+for step in 1...103 {
+    let p = CGFloat(step) / 100, shape = notchLayout.shape(at: p), before = notchLayout.shape(at: CGFloat(step - 1) / 100)
+    assert(shape.radius >= before.radius && shape.radius - before.radius <= shape.height - before.height + 1e-9,
+           "The corner only grows, and never faster than the island drops (p \(p))")
+    let silhouette = notchLayout.path(at: p), rect = notchLayout.bodyRect(at: p)
+    assert(!silhouette.contains(NSPoint(x: rect.maxX - 0.3, y: rect.minY + 0.3)) &&
+           !silhouette.contains(NSPoint(x: rect.minX + 0.3, y: rect.minY + 0.3)), "Lower corners stay round at p \(p)")
+}
 let openShape = notchLayout.shape(at: 1)
 assert(openShape.minX == notchLayout.final.lowerBound && openShape.maxX == notchLayout.final.upperBound &&
        openShape.height == height && openShape.radius == IslandLayout.cornerRadius)
