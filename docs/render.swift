@@ -104,6 +104,13 @@ final class PreviewCanvas: NSView {
             NSColor.black.setFill()
             let path = NSBezierPath(roundedRect: housing, xRadius: 14.6, yRadius: 14.6)
             path.appendRect(NSRect(x: housing.minX, y: housing.midY, width: housing.width, height: housing.height / 2))
+            // The housing flares into the top of the display like the wing does on the right.
+            let flare = NotchWing.topFlare
+            path.move(to: NSPoint(x: housing.minX, y: housing.maxY))
+            path.line(to: NSPoint(x: housing.minX, y: housing.maxY - flare))
+            path.appendArc(withCenter: NSPoint(x: housing.minX - flare, y: housing.maxY - flare), radius: flare,
+                           startAngle: 0, endAngle: 90, clockwise: false)
+            path.close()
             path.fill()
         }
     }
