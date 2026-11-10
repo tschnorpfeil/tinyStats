@@ -163,24 +163,6 @@ struct NotchWing: Equatable {
     }
 }
 
-/// Whether the wing fits beside the status items. macOS lays those out from
-/// the right edge towards the housing without knowing about the wing, so a
-/// full menu bar would end up underneath it.
-enum WingRoom {
-    /// Clear space kept between the wing and the first status item.
-    static let gap: CGFloat = 6
-    /// Extra room required before the wing returns, so it does not flip back and forth.
-    static let hysteresis: CGFloat = 12
-
-    /// `stripWidth` is how far the status items reach in from the display's
-    /// right edge; nil means macOS has already hidden some for lack of room.
-    static func fits(_ wing: NotchWing, screenMaxX: CGFloat, stripWidth: CGFloat?, returning: Bool = false) -> Bool {
-        guard let stripWidth else { return false }
-        let needed = wing.wingMaxX + NotchWing.topFlare + gap + (returning ? hysteresis : 0)
-        return screenMaxX - stripWidth >= needed
-    }
-}
-
 /// Where the details hang and how they grow out of their source. Global
 /// coordinates; `path`, `bodyRect` and `finalBodyRect` use window coordinates.
 struct IslandLayout: Equatable {

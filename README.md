@@ -53,7 +53,7 @@ tinystats status   # check whether the app is running
 tinystats version  # installed version
 ```
 
-When other apps' menu bar icons reach the notch, tinyStats moves into the menu bar and returns beside the notch once there is room. To keep it in the menu bar, click the gear in the details and turn off “Show Beside Notch”.
+On a MacBook, tinyStats always keeps its place beside the notch. In a very full menu bar it covers the icons closest to the notch; to move it into the menu bar instead, click the gear in the details and turn off “Show Beside Notch”.
 
 [Installation, troubleshooting and removal](INSTALL.md)
 
@@ -67,4 +67,4 @@ open tinyStats.app
 ./docs/render.sh   # regenerate the images in docs/
 ```
 
-To release, raise `CFBundleShortVersionString` in `build.sh` and the `tag:` in `Formula/tinystats.rb`, merge, then push the matching tag, e.g. `git tag v2.3 && git push origin v2.3`. `./release.sh` builds the signed, notarized `tinyStats-<version>.dmg`; attach it to the GitHub release as `tinyStats.dmg`. The one-time signing setup is described at the top of `release.sh`.
+To release, raise `CFBundleShortVersionString` in `build.sh` and the `tag:` in `Formula/tinystats.rb`, merge, then push the matching tag, e.g. `git tag v2.4 && git push origin v2.4`. `./release.sh` builds the signed, notarized `tinyStats-<version>.dmg`; attach it to the GitHub release as `tinyStats.dmg`. The one-time signing setup is described at the top of `release.sh`.
