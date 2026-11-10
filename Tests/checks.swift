@@ -500,11 +500,13 @@ assert(settleFrame(opening, at: 1) <= 30, "Opening settles exactly within 500 ms
 let closing = Array(simulate([(1, Spring.opening, 1.5), (0, Spring.closing, 1)]).suffix(61))
 assert(closing.allSatisfy { (0...1).contains($0) }, "Closing never undershoots")
 for (a, b) in zip(closing, closing.dropFirst()) { assert(b <= a, "Closing never rebounds") }
-assert(closing.firstIndex(where: { $0 <= 0.05 })! <= 12, "Closing reaches 5 % within 200 ms")
-assert(settleFrame(closing, at: 0) <= 24, "Closing settles exactly within 400 ms")
+assert(closing.firstIndex(where: { $0 <= 0.05 })! <= 9, "Closing reaches 5 % within 150 ms")
+assert(settleFrame(closing, at: 0) <= 12, "Closing is gone within 200 ms, with no creeping tail")
+let lastMove = closing[settleFrame(closing, at: 0) - 2] - closing[settleFrame(closing, at: 0) - 1]
+assert(lastMove > 0.02, "The island is still moving when it reaches the notch, got \(lastMove)")
 assert(Spring.closing.response < Spring.opening.response, "Closing is quicker than opening")
 let reversal = simulate([(1, Spring.opening, 0.12), (0, Spring.closing, 0.1), (1, Spring.opening, 1.5)])
-for (a, b) in zip(reversal, reversal.dropFirst()) { assert(abs(b - a) <= 0.12, "Reversal stays continuous") }
+for (a, b) in zip(reversal, reversal.dropFirst()) { assert(abs(b - a) <= 0.14, "Reversal stays continuous") }
 assert(reversal.allSatisfy { (0...1).contains($0) }, "Reversal never leaves 0...1")
 assert(settleFrame(reversal, at: 1) <= 12 + 6 + 30, "Reversal settles within 500 ms of the last retarget")
 let closeReversal = simulate([(1, Spring.opening, 1), (0, Spring.closing, 0.08), (1, Spring.opening, 1)])

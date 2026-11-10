@@ -381,15 +381,15 @@ for (index, view) in gallery.enumerated() {
 
 // MARK: - Demo animation
 
-/// Open, hold, close at the notch, stepped by the app's own spring at 100 Hz
-/// and played at 50 fps, so every motion gets 30+ frames at half speed.
+/// Open, hold, close at the notch, stepped by the app's own spring in real
+/// time at 50 fps (GIF players slow anything faster down).
 func writeDemo(to path: String, scene: Scene = Scene()) throws {
     var frames: [(progress: CGFloat, delay: Double)] = [(0, 1.2)]
     var spring = Spring()
     for (target, parameters, hold) in [(1.0, Spring.opening, 2.4), (0.0, Spring.closing, 0.02)] {
         spring.retarget(target, parameters)
         repeat {
-            spring.advance(by: 0.01)
+            spring.advance(by: 0.02)
             frames.append((CGFloat(spring.value), 0.02))
         } while !spring.isSettled
         frames[frames.count - 1].delay = hold

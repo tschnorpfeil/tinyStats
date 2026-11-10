@@ -333,13 +333,20 @@ struct Spring {
         /// Damping ratio ζ; 1 is critical damping, the fastest motion that
         /// never overshoots.
         var damping: Double
+        /// How far past the target the spring aims, in progress units. The
+        /// value still stops at the target, but arrives there moving instead
+        /// of creeping in over the spring's long tail.
+        var reach: Double = 0
     }
     // From rest, critical damping reaches 95 % after 0.755 × response and
     // settles below half a per-mille after 1.47 × response. Opening: 95 % at
-    // ~240 ms; closing is quicker: 95 % at ~180 ms. The choreography fades the
-    // content in over the last part of opening and out first when closing.
+    // ~240 ms, then it settles into place. Closing aims a tenth past closed,
+    // so the island is gone after ~150 ms and still moving when it vanishes
+    // into the notch; without the reach its last points took another 200 ms.
+    // The choreography fades the content in over the last part of opening
+    // and out first when closing.
     static let opening = Parameters(response: 0.32, damping: 1)
-    static let closing = Parameters(response: 0.24, damping: 1)
+    static let closing = Parameters(response: 0.24, damping: 1, reach: 0.1)
 
     private(set) var value: Double = 0
     private(set) var velocity: Double = 0
@@ -365,9 +372,10 @@ struct Spring {
         let friction = 4 * Double.pi * parameters.damping / parameters.response
         // A stalled frame slows the motion down instead of making it jump.
         var remaining = min(interval, 1.0 / 15)
+        let attractor = target + (target > value ? parameters.reach : -parameters.reach)
         while remaining > 0 {
             let step = min(1.0 / 480, remaining)
-            velocity += (-stiffness * (value - target) - friction * velocity) * step
+            velocity += (-stiffness * (value - attractor) - friction * velocity) * step
             value += velocity * step
             // Hard guard against any overshoot, including fast double reversals.
             if value < 0 || value > 1 {
