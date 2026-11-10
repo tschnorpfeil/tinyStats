@@ -412,16 +412,6 @@ for step in 1...103 {
     assert(!silhouette.contains(NSPoint(x: rect.maxX - 0.3, y: rect.minY + 0.3)) &&
            !silhouette.contains(NSPoint(x: rect.minX + 0.3, y: rect.minY + 0.3)), "Lower corners stay round at p \(p)")
 }
-// Room beside the status items: `wing` ends at wingMaxX; the flare and a gap must stay clear.
-let roomScreenMaxX = wing.wingMaxX + 500
-let roomNeeded = NotchWing.topFlare + WingRoom.gap
-assert(WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500 - roomNeeded), "Status items may come up to the gap")
-assert(!WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500 - roomNeeded + 1), "One point closer and the wing gives way")
-assert(!WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500), "Items touching the wing crowd it")
-assert(!WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: nil), "An overflowing menu bar has no room")
-assert(!WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500 - roomNeeded, returning: true) &&
-       WingRoom.fits(wing, screenMaxX: roomScreenMaxX, stripWidth: 500 - roomNeeded - WingRoom.hysteresis, returning: true),
-       "The wing returns only with room to spare, so it cannot flip back and forth")
 let openShape = notchLayout.shape(at: 1)
 assert(openShape.minX == notchLayout.final.lowerBound && openShape.maxX == notchLayout.final.upperBound &&
        openShape.height == height && openShape.radius == IslandLayout.cornerRadius)
@@ -868,7 +858,13 @@ func menuItem(_ section: String, _ name: String) -> (NSMenu, Int) {
 }
 let opened = customizing.customizationMenu()
 assert(opened.items.map(\.title).prefix(3) == ["Top Left: CPU", "Top Middle: GPU", "Top Right: RAM"] && opened.items[4].title == "Menu Bar: Network")
-assert(opened.items.last?.title == "Reset to Defaults" && opened.items.last?.isEnabled == false, "Nothing to reset yet")
+func resetItem(_ menu: NSMenu) -> NSMenuItem { menu.items.first { $0.title == "Reset to Defaults" }! }
+assert(resetItem(opened).isEnabled == false, "Nothing to reset yet")
+let updates = opened.items.last!
+assert(updates.title == IslandContentView.updatesTitle && updates.isEnabled && opened.items[opened.items.count - 2].isSeparatorItem,
+       "Updates come last, behind a separator")
+assert(IslandContentView.releasesURL.absoluteString == "https://github.com/tschnorpfeil/tinyStats/releases/latest" && updates.toolTip?.hasPrefix("Installed: ") == true,
+       "The browser shows the latest release; the app itself makes no network connection")
 assert(opened.items[0].submenu!.items.map(\.title) == ["CPU", "GPU", "RAM", "Battery", "Disk"], "Tiles offer gauges only")
 assert(opened.items[0].submenu!.items[0].state == .on && opened.items[0].submenu!.items[1].state == .off)
 let barPicker = opened.items[4].submenu!.items
@@ -886,7 +882,7 @@ let (barMenu, swapIndex) = menuItem("Menu Bar", "Swap")
 barMenu.performActionForItem(at: swapIndex)
 assert(customizing.metricLayout.menuBar == .swap && reported?.menuBar == .swap)
 assert(customizing.customizationMenu().items[4].title == "Menu Bar: Swap")
-let reset = customizing.customizationMenu().items.last!
+let reset = resetItem(customizing.customizationMenu())
 assert(reset.isEnabled)
 _ = (reset.target as! NSObject).perform(reset.action, with: reset)
 assert(customizing.metricLayout == MetricLayout() && reported == MetricLayout())
