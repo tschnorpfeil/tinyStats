@@ -1,8 +1,12 @@
+<img src="docs/images/icon.png" alt="" width="96" align="right">
+
 # tinyStats
 
-CPU, GPU, RAM, battery, disk and network activity beside your MacBook's notch. On displays without a notch, it lives in the menu bar. Click to open the details.
+CPU, GPU, RAM and network activity beside your MacBook's notch. On displays without a notch, it lives in the menu bar. Click to open the details.
 
-<img src="docs/images/notch-collapsed.png" alt="tinyStats collapsed beside the notch" width="480">
+**[Download tinyStats.dmg](https://github.com/tschnorpfeil/tinyStats/releases/latest/download/tinyStats.dmg)** · macOS 14 or later · Apple Silicon and Intel · signed and notarized · [MIT](LICENSE)
+
+<img src="docs/images/demo.gif" alt="tinyStats opening and closing beside the notch" width="480">
 
 | With a notch | Without a notch |
 | :---: | :---: |
@@ -14,22 +18,32 @@ The three bars match the three tiles in the details: CPU, GPU and RAM by default
 
 To customize, click the gear in the details. Each tile can show CPU, GPU, RAM, Battery or Disk, and the menu bar can show any one metric instead of network activity.
 
+tinyStats is about 1,900 lines of Swift on AppKit, with no dependencies. It makes no network connections, starts nothing in the background and has no Dock icon.
+
 ## Install
 
-Requires macOS 14+. With [Homebrew](https://brew.sh):
+### Download
+
+Open [tinyStats.dmg](https://github.com/tschnorpfeil/tinyStats/releases/latest/download/tinyStats.dmg), drag tinyStats to Applications and open it. To quit, open the details and click Quit. To start it at login, add it under System Settings → General → Login Items. To update, download the new version and replace the app.
+
+### Homebrew
 
 ```sh
 brew tap tschnorpfeil/tinystats https://github.com/tschnorpfeil/tinyStats
 brew install tschnorpfeil/tinystats/tinystats
 ```
 
-Homebrew builds the app on your Mac, so no signed download is needed. The full name `tschnorpfeil/tinystats/tinystats` also marks the formula as trusted, which Homebrew requires for third-party taps. Without Homebrew, install Xcode Command Line Tools (`xcode-select --install`) and run:
+Homebrew builds the app on your Mac. The full name `tschnorpfeil/tinystats/tinystats` also marks the formula as trusted, which Homebrew requires for third-party taps.
+
+### From source
+
+Install Xcode Command Line Tools (`xcode-select --install`) and run:
 
 ```sh
 git clone https://github.com/tschnorpfeil/tinyStats.git && ./tinyStats/install.sh
 ```
 
-Then open a new terminal:
+Homebrew and the source installer add a `tinystats` command. Open a new terminal:
 
 ```sh
 tinystats          # start
@@ -39,7 +53,7 @@ tinystats status   # check whether the app is running
 tinystats version  # installed version
 ```
 
-No automatic startup. No Dock icon. If the widget covers other menus, click the gear in the details and turn off “Show Beside Notch”.
+If the widget covers other menus, click the gear in the details and turn off “Show Beside Notch”.
 
 [Installation, troubleshooting and removal](INSTALL.md)
 
@@ -50,6 +64,7 @@ No automatic startup. No Dock icon. If the widget covers other menus, click the 
 open tinyStats.app
 ./Tests/run.sh
 ./Tests/install.sh
+./docs/render.sh   # regenerate the images in docs/
 ```
 
-To release, raise `CFBundleShortVersionString` in `build.sh` and the `tag:` in `Formula/tinystats.rb`, merge, then push the matching tag, e.g. `git tag v2.0 && git push origin v2.0`.
+To release, raise `CFBundleShortVersionString` in `build.sh` and the `tag:` in `Formula/tinystats.rb`, merge, then push the matching tag, e.g. `git tag v2.2 && git push origin v2.2`. `./release.sh` builds the signed, notarized `tinyStats-<version>.dmg`; attach it to the GitHub release as `tinyStats.dmg`. The one-time signing setup is described at the top of `release.sh`.
