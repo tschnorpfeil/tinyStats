@@ -149,6 +149,8 @@ func canvas(_ scene: Scene) -> PreviewCanvas {
         let view = WingView(frame: scene.wing.frame)
         view.wing = scene.wing
         view.attach = Choreography.attach(scene.progress)
+        let corner = scene.islandLayout.wingCorner(at: scene.progress)
+        view.corner = scene.progress > 0 ? NSSize(width: corner.radius, height: corner.rise) : nil
         view.indicator = indicator
         canvas.addSubview(view)
     } else {

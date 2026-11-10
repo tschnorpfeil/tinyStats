@@ -62,6 +62,8 @@ final class App: NSObject, NSApplicationDelegate {
             // A card floating under the status item leaves the wing alone.
             let attached = presenter.view.layout?.isFloating == false
             wingPanel.wingView.attach = attached ? Choreography.attach(progress) : 0
+            let corner = attached && progress > 0 ? presenter.view.layout?.wingCorner(at: progress) : nil
+            wingPanel.wingView.corner = corner.map { NSSize(width: $0.radius, height: $0.rise) }
         }
         presenter.onPresentedChange = { [weak self] shown in
             let highlighted = shown && self?.presenter.view.layout?.isFloating == true
