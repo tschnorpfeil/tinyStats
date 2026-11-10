@@ -32,6 +32,7 @@ final class App: NSObject, NSApplicationDelegate {
     static let notchDefaultsKey = "showAtNotch"
     let status = NSStatusBar.system.statusItem(withLength: MenuBarIndicators.size.width + 8)
     let metrics = Metrics()
+    let keepAwake = KeepAwake()
     let content = IslandContentView(width: IslandLayout.menuBarWidth, hasBattery: Metrics.hasBattery)
     private var lastSample = Sample()
     private lazy var presenter = IslandPresenter(content: content)
@@ -53,6 +54,8 @@ final class App: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set(enabled, forKey: Self.notchDefaultsKey)
             self?.updatePlacement()
         }
+        // Never restored at launch: a forgotten Keep Awake should not outlive a restart.
+        content.onKeepAwakeToggle = { [weak self] on in self?.keepAwake.set(on) ?? false }
         content.setMetricLayout(.stored(in: .standard, hasBattery: Metrics.hasBattery))
         content.onLayoutChange = { [weak self] layout in
             layout.save(to: .standard)

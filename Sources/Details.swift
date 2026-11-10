@@ -224,7 +224,9 @@ final class MetricListView: ReadoutView {
 /// Quiet text action that brightens under the pointer.
 final class TextButton: NSButton {
     private var hovering = false { didSet { needsDisplay = true } }
-    private var symbol: String?
+    var symbol: String? { didSet { needsDisplay = true } }
+    /// Draws in the primary colour without hover, for a control that is on.
+    var isActive = false { didSet { needsDisplay = true } }
 
     convenience init(label: String, symbol: String? = nil) {
         self.init(frame: .zero)
@@ -243,7 +245,7 @@ final class TextButton: NSButton {
     override func mouseExited(with event: NSEvent) { hovering = false }
 
     override func draw(_ dirtyRect: NSRect) {
-        let color = hovering || isHighlighted ? IslandStyle.primary : IslandStyle.secondary
+        let color = hovering || isHighlighted || isActive ? IslandStyle.primary : IslandStyle.secondary
         if let symbol {
             IslandStyle.drawSymbol(symbol, NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [color])), x: bounds.maxX, in: bounds, alignRight: true)
@@ -274,10 +276,13 @@ final class IslandContentView: NSView {
     let network = NetworkView()
     let list = MetricListView()
     let customizeButton = TextButton(label: "Settings", symbol: "gearshape")
+    let keepAwakeButton = TextButton(label: KeepAwake.title, symbol: "cup.and.saucer")
     let quitButton = TextButton(label: "Quit")
     private var notchAvailable = false
     private var notchEnabled = false
     var onNotchToggle: ((Bool) -> Void)?
+    /// Asked for the new state; answers the state actually reached.
+    var onKeepAwakeToggle: ((Bool) -> Bool)?
     var onLayoutChange: ((MetricLayout) -> Void)?
 
     init(width: CGFloat, hasBattery: Bool) {
@@ -288,11 +293,14 @@ final class IslandContentView: NSView {
         customizeButton.target = self
         customizeButton.action = #selector(customizeClicked)
         customizeButton.toolTip = "Settings"
+        keepAwakeButton.target = self
+        keepAwakeButton.action = #selector(keepAwakeClicked)
+        setKeepAwake(false)
         quitButton.target = NSApplication.shared
         quitButton.action = #selector(NSApplication.terminate(_:))
         quitButton.setAccessibilityLabel("Quit tinyStats")
         quitButton.toolTip = "Quit tinyStats (⌘Q)"
-        (tiles as [NSView] + [network, list, customizeButton, quitButton]).forEach(addSubview)
+        (tiles as [NSView] + [network, list, keepAwakeButton, customizeButton, quitButton]).forEach(addSubview)
         list.metrics = metricLayout.listed(hasBattery: hasBattery)
         layout(width: width)
     }
@@ -313,6 +321,7 @@ final class IslandContentView: NSView {
         list.frame = NSRect(x: Self.padding, y: Self.listTop, width: inner, height: MetricListView.height)
         quitButton.frame = NSRect(x: width - Self.padding - 30, y: Self.footerTop, width: 30, height: Self.footerHeight)
         customizeButton.frame = NSRect(x: quitButton.frame.minX - 8 - 16, y: Self.footerTop, width: 16, height: Self.footerHeight)
+        keepAwakeButton.frame = NSRect(x: customizeButton.frame.minX - 8 - 16, y: Self.footerTop, width: 16, height: Self.footerHeight)
         needsDisplay = true
     }
 
@@ -426,6 +435,21 @@ final class IslandContentView: NSView {
     func setNotchOption(available: Bool, enabled: Bool) {
         notchAvailable = available
         notchEnabled = enabled
+    }
+
+    private(set) var keepAwake = false
+
+    /// A filled cup in the primary colour while the Mac is kept awake.
+    func setKeepAwake(_ on: Bool) {
+        keepAwake = on
+        keepAwakeButton.symbol = on ? "cup.and.saucer.fill" : "cup.and.saucer"
+        keepAwakeButton.isActive = on
+        keepAwakeButton.toolTip = on ? KeepAwake.onHelp : KeepAwake.offHelp
+        keepAwakeButton.setAccessibilityValue(on ? "On" : "Off")
+    }
+
+    @objc private func keepAwakeClicked() {
+        setKeepAwake(onKeepAwakeToggle?(!keepAwake) ?? false)
     }
 
     @objc private func notchToggled() {
