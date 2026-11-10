@@ -391,12 +391,13 @@ assert(notchLayout.width == wing.notch.width + NotchWing.wingWidth && notchLayou
 assert(notchLayout.frame.minX + notchLayout.finalBodyRect.maxX == wing.wingMaxX,
        "Expanded right edge equals the unchanged compact wing")
 let startShape = notchLayout.shape(at: 0)
-assert(startShape.height == 0 && startShape.minX == wing.notch.maxX && startShape.maxX == wing.wingMaxX,
-       "Motion starts as the compact wing itself")
+assert(startShape.height == 0 && startShape.minX == wing.notch.minX && startShape.maxX == wing.wingMaxX,
+       "Motion starts as wide as housing and wing together")
 for step in 0...103 {
     let p = CGFloat(step) / 100
-    assert(abs(notchLayout.shape(at: p).maxX - wing.wingMaxX) < 1e-9,
-           "Wing and body share one right edge throughout the motion (p \(p))")
+    let shape = notchLayout.shape(at: p)
+    assert(abs(shape.maxX - wing.wingMaxX) < 1e-9 && abs(shape.minX - wing.notch.minX) < 1e-9,
+           "Housing, wing and body share both outer edges throughout: the island only drops (p \(p))")
 }
 let openShape = notchLayout.shape(at: 1)
 assert(openShape.minX == notchLayout.final.lowerBound && openShape.maxX == notchLayout.final.upperBound &&
@@ -668,8 +669,9 @@ assert(islandContent.alphaValue == 0, "Content waits until the body has room")
 let fadingBody = notchLayout.bodyRect(at: 0.3)
 let fadingPixels = pixels(of: island)
 let fadingAlpha = color(fadingPixels, fadingBody.midX, fadingPixels.size.height - fadingBody.midY).alphaComponent
-assert(abs(fadingAlpha - Choreography.backgroundAlpha(0.3)) < 0.03 && fadingAlpha > 0.1 && fadingAlpha < 0.9,
-       "Silhouette renders translucent while it fades, got \(fadingAlpha)")
+assert(fadingAlpha > 0.99, "Beside the notch the silhouette is solid black from the first frame, got \(fadingAlpha)")
+let startBar = barLayout.shape(at: 0), openBar = barLayout.shape(at: 1)
+assert(startBar.maxX - startBar.minX < openBar.maxX - openBar.minX, "The floating card still spreads from its status item")
 print("PASS: island render monochrome, convex corners, content hidden while closed and early in the motion")
 
 let capTestPoint = NSPoint(x: body.minX + 1, y: notchLayout.attachY - notchLayout.frame.minY + 5)

@@ -53,7 +53,8 @@ final class IslandView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let layout else { return }
-        NSColor.black.withAlphaComponent(Choreography.backgroundAlpha(progress)).setFill()
+        // The notch is solid black, so its extension is too; only the floating card fades in.
+        NSColor.black.withAlphaComponent(layout.isFloating ? Choreography.backgroundAlpha(progress) : 1).setFill()
         layout.path(at: progress).fill()
     }
 

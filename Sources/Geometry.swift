@@ -208,7 +208,10 @@ struct IslandLayout: Equatable {
     }
 
     func shape(at progress: CGFloat) -> Shape {
-        let grow = Choreography.widthProgress(progress)
+        // Beside the notch the island is as wide as housing and wing from the
+        // first frame and only drops, so the notch itself seems to extend.
+        // The card under the status item still spreads from its button.
+        let grow = isFloating ? Choreography.widthProgress(progress) : 1
         let minX = source.lowerBound + (final.lowerBound - source.lowerBound) * grow
         let maxX = source.upperBound + (final.upperBound - source.upperBound) * grow
         let h = min(height + Self.headroom, max(0, height * progress))
@@ -265,7 +268,7 @@ struct IslandLayout: Equatable {
 /// Pure functions of the presentation progress (0 closed, 1 open; the
 /// spring keeps it inside that range). Drawing, reversals and render checks share them.
 enum Choreography {
-    /// Width leads height slightly, so the shape first spreads, then drops.
+    /// Floating card only: width leads height slightly, so the shape first spreads, then drops.
     static func widthProgress(_ p: CGFloat) -> CGFloat {
         let t = min(max(p / 0.8, 0), 1)
         return 1 - (1 - t) * (1 - t)
@@ -277,8 +280,8 @@ enum Choreography {
     static func contentAlpha(_ p: CGFloat) -> CGFloat { smoothstep(0.55, 0.95, p) }
     /// Content settles downward into place while the body opens.
     static func contentDrop(_ p: CGFloat) -> CGFloat { 8 * (1 - smoothstep(0.3, 1, p)) }
-    /// Squares the wing's lower-right corner as the body fades in below it.
-    static func attach(_ p: CGFloat) -> CGFloat { smoothstep(0, 0.3, p) }
+    /// Squares the wing's lower-right corner as the solid body drops below it.
+    static func attach(_ p: CGFloat) -> CGFloat { smoothstep(0, 0.12, p) }
 
     static func smoothstep(_ a: CGFloat, _ b: CGFloat, _ x: CGFloat) -> CGFloat {
         let t = min(max((x - a) / (b - a), 0), 1)
