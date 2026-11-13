@@ -34,8 +34,8 @@ cat > "$task_bundle/Contents/Info.plist" <<PLIST
 <key>CFBundleName</key><string>tinyStats</string>
 <key>CFBundleDisplayName</key><string>tinyStats</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>2.4</string>
-<key>CFBundleVersion</key><string>6</string>
+<key>CFBundleShortVersionString</key><string>2.5</string>
+<key>CFBundleVersion</key><string>7</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
 <key>LSMinimumSystemVersion</key><string>14.0</string>

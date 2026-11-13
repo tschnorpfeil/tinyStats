@@ -69,4 +69,4 @@ open tinyStats.app
 ./docs/render.sh   # regenerate the images in docs/
 ```
 
-To release, raise `CFBundleShortVersionString` in `build.sh` and the `tag:` in `Formula/tinystats.rb`, merge, then push the matching tag, e.g. `git tag v2.4 && git push origin v2.4`. `./release.sh` builds the signed, notarized `tinyStats-<version>.dmg`; attach it to the GitHub release as `tinyStats.dmg`. The one-time signing setup is described at the top of `release.sh`.
+To release, raise `CFBundleShortVersionString` in `build.sh` and the `tag:` in `Formula/tinystats.rb`, merge, then push the matching tag, e.g. `git tag v2.5 && git push origin v2.5`. `./release.sh` builds the signed, notarized `tinyStats-<version>.dmg`; attach it to the GitHub release as `tinyStats.dmg`. The one-time signing setup is described at the top of `release.sh`.
