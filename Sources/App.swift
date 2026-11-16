@@ -55,6 +55,8 @@ final class App: NSObject, NSApplicationDelegate {
             self?.updatePlacement()
         }
         // Never restored at launch: a forgotten Keep Awake should not outlive a restart.
+        content.isOpenAtLogin = { LoginItem.isEnabled }
+        content.onOpenAtLoginToggle = { LoginItem.set($0) }
         content.onKeepAwakeToggle = { [weak self] on in self?.keepAwake.set(on) ?? false }
         content.setMetricLayout(.stored(in: .standard, hasBattery: Metrics.hasBattery))
         content.onLayoutChange = { [weak self] layout in
