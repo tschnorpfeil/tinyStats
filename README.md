@@ -26,7 +26,7 @@ tinyStats is about 2,000 lines of Swift on AppKit, with no dependencies. It make
 
 ### Download
 
-Open [tinyStats.dmg](https://github.com/tschnorpfeil/tinyStats/releases/latest/download/tinyStats.dmg), drag tinyStats to Applications and open it. To quit, open the details and click Quit. To start it at login, add it under System Settings → General → Login Items. To update, download the new version and replace the app.
+Open [tinyStats.dmg](https://github.com/tschnorpfeil/tinyStats/releases/latest/download/tinyStats.dmg), drag tinyStats to Applications and open it. To quit, open the details and click Quit. To start it at login, open the details and choose Settings → Open at Login. To update, download the new version and replace the app.
 
 ### Homebrew
 

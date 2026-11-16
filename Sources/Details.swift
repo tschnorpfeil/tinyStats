@@ -340,6 +340,10 @@ final class IslandContentView: NSView {
     private var notchAvailable = false
     private var notchEnabled = false
     var onNotchToggle: ((Bool) -> Void)?
+    /// Read each time the menu opens; the item can also change in System Settings.
+    var isOpenAtLogin: () -> Bool = { false }
+    /// Asked for the new state; answers the state actually reached.
+    var onOpenAtLoginToggle: ((Bool) -> Bool)?
     /// Asked for the new state; answers the state actually reached.
     var onKeepAwakeToggle: ((Bool) -> Bool)?
     var onLayoutChange: ((MetricLayout) -> Void)?
@@ -418,7 +422,7 @@ final class IslandContentView: NSView {
     static let notchOptionTitle = "Show Beside Notch"
 
     /// One native menu: a submenu per tile, one for the menu bar, the notch
-    /// option where a display has one, and a way back to the default metrics.
+    /// option where a display has one, Open at Login, and a way back to the default metrics.
     func customizationMenu() -> NSMenu {
         let menu = NSMenu()
         menu.appearance = NSAppearance(named: .darkAqua)
@@ -456,6 +460,10 @@ final class IslandContentView: NSView {
             notch.state = notchEnabled ? .on : .off
             menu.addItem(notch)
         }
+        let login = NSMenuItem(title: LoginItem.title, action: #selector(openAtLoginToggled), keyEquivalent: "")
+        login.target = self
+        login.state = isOpenAtLogin() ? .on : .off
+        menu.addItem(login)
         menu.addItem(.separator())
         let reset = NSMenuItem(title: "Reset to Defaults", action: #selector(resetPicked), keyEquivalent: "")
         reset.target = self
@@ -527,6 +535,10 @@ final class IslandContentView: NSView {
 
     @objc private func keepAwakeClicked() {
         setKeepAwake(onKeepAwakeToggle?(!keepAwake) ?? false, animated: true)
+    }
+
+    @objc private func openAtLoginToggled() {
+        _ = onOpenAtLoginToggle?(!isOpenAtLogin())
     }
 
     @objc private func notchToggled() {

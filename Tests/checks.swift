@@ -566,6 +566,19 @@ offMenu.performActionForItem(at: offMenu.indexOfItem(withTitle: IslandContentVie
 assert(toggled == false && notchOption()?.state == .off, "The same item turns it back off")
 assert(notchMenu.items.map(\.title).firstIndex(of: IslandContentView.notchOptionTitle) == 5 && notchMenu.items[4].title.hasPrefix("Menu Bar"),
        "The option sits directly below the menu bar choice")
+var loginOn = false
+var loginAsked: Bool?
+controls.isOpenAtLogin = { loginOn }
+controls.onOpenAtLoginToggle = { loginAsked = $0; loginOn = $0; return $0 }
+func loginOption() -> NSMenuItem? { controls.customizationMenu().items.first { $0.title == LoginItem.title } }
+assert(loginOption()?.state == .off && loginOption()?.isEnabled == true)
+let loginMenu = controls.customizationMenu()
+loginMenu.performActionForItem(at: loginMenu.indexOfItem(withTitle: LoginItem.title))
+assert(loginAsked == true && loginOption()?.state == .on, "Open at Login asks for the opposite of the live state")
+loginOn = false
+assert(loginOption()?.state == .off, "Removed in System Settings, the menu shows it off")
+controls.setNotchOption(available: false, enabled: false)
+assert(loginOption() != nil, "Open at Login is offered without a notch too")
 assert(controls.quitButton.target === NSApp && controls.quitButton.action == #selector(NSApplication.terminate(_:)) &&
        controls.quitButton.accessibilityRole() == .button)
 // Keep Awake: a real assertion, shown in the footer, released on the second click.

@@ -5,7 +5,7 @@
 Requires macOS 14+, on Apple Silicon or Intel. Open [tinyStats.dmg](https://github.com/tschnorpfeil/tinyStats/releases/latest/download/tinyStats.dmg) and drag tinyStats to Applications. The app is signed with a Developer ID and notarized by Apple, so it opens without a Gatekeeper warning.
 
 - **Quit:** open the details and click Quit.
-- **Start at login:** add tinyStats under System Settings → General → Login Items. It doesn't register itself.
+- **Start at login:** open the details and choose Settings → Open at Login. It shows up under System Settings → General → Login Items, where you can remove it too.
 - **Update:** click the gear in the details and choose “Check for Updates…” to open the latest release. Quit, download the new version and replace the app in Applications. There is no automatic updater.
 - **Remove:** quit and move the app to the Trash.
 
@@ -64,7 +64,7 @@ The update lock covers fetching through installation. `tinystats version` reads 
 
 ## Remove
 
-Run `tinystats stop`, then remove `~/Applications/tinyStats.app`, `~/.local/bin/tinystats` and `~/.local/share/tinystats`. Back up any source changes first. You may remove the PATH entry marked `# tinyStats CLI` in `~/.zprofile`, but other tools may use the same directory. There is no background service or startup entry.
+If you turned on Open at Login, turn it off first. Run `tinystats stop`, then remove `~/Applications/tinyStats.app`, `~/.local/bin/tinystats` and `~/.local/share/tinystats`. Back up any source changes first. You may remove the PATH entry marked `# tinyStats CLI` in `~/.zprofile`, but other tools may use the same directory. There is no other background service or startup entry.
 
 ## Test the installer
 
