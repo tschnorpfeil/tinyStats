@@ -64,7 +64,7 @@ The update lock covers fetching through installation. `tinystats version` reads 
 
 ## Remove
 
-Run `tinystats stop`, then remove `~/Applications/tinyStats.app`, `~/.local/bin/tinystats` and `~/.local/share/tinystats`. Back up any source changes first. You may remove the PATH entry marked `# tinyStats CLI` in `~/.zprofile`, but other tools may use the same directory. There is no background service or startup entry.
+If you turned on Open at Login, turn it off first. Run `tinystats stop`, then remove `~/Applications/tinyStats.app`, `~/.local/bin/tinystats` and `~/.local/share/tinystats`. Back up any source changes first. You may remove the PATH entry marked `# tinyStats CLI` in `~/.zprofile`, but other tools may use the same directory. There is no other background service or startup entry.
 
 ## Test the installer
 
